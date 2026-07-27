@@ -511,12 +511,37 @@ const Car = struct {
     }
 
     fn update(self: *Car, dt: f32) void {
-        const throttle: f32 = if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) 1.0 else 0.0;
-        const brake: f32 = if (rl.isKeyDown(.s) or rl.isKeyDown(.down)) 1.0 else 0.0;
-        var steer: f32 = 0.0;
-        if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) steer += 1.0;
-        if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) steer -= 1.0;
-        const handbrake = rl.isKeyDown(.space);
+        // Keyboard input
+        const kb_throttle: f32 = if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) 1.0 else 0.0;
+        const kb_brake: f32 = if (rl.isKeyDown(.s) or rl.isKeyDown(.down)) 1.0 else 0.0;
+        var kb_steer: f32 = 0.0;
+        if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) kb_steer += 1.0;
+        if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) kb_steer -= 1.0;
+        const kb_handbrake = rl.isKeyDown(.space);
+
+        // Combine with wheel input (overrides keyboard when active)
+        var throttle = kb_throttle;
+        var brake = kb_brake;
+        var steer = kb_steer;
+        var handbrake = kb_handbrake;
+
+        if (rl.isGamepadAvailable(0) and rl.getGamepadAxisCount(0) >= 3) {
+            const raw_steer = rl.getGamepadAxisMovement(0, .left_x);
+            const raw_gas = rl.getGamepadAxisMovement(0, .left_y);
+            const raw_brake = rl.getGamepadAxisMovement(0, .right_x);
+
+            // Analog steering with dead zone
+            if (@abs(raw_steer) > 0.02) steer = raw_steer;
+
+            // Pedals: +1.0 at rest, -1.0 fully pressed
+            const wheel_throttle = std.math.clamp((1.0 - raw_gas) * 0.5, 0.0, 1.0);
+            const wheel_brake = std.math.clamp((1.0 - raw_brake) * 0.5, 0.0, 1.0);
+            if (wheel_throttle > 0.04) throttle = wheel_throttle;
+            if (wheel_brake > 0.04) brake = wheel_brake;
+
+            // Button 0 (X/Cross) = handbrake
+            if (rl.isGamepadButtonDown(0, .right_face_down)) handbrake = true;
+        }
 
         var forward = Vec2{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
         var right = Vec2{ .x = @cos(self.yaw), .z = -@sin(self.yaw) };
@@ -817,7 +842,11 @@ fn drawHud(car: Car) void {
     const bw: i32 = @intFromFloat(205.0 * std.math.clamp(@abs(car.speed) / 84.0, 0.0, 1.0));
     rl.drawRectangle(27, height - 57, bw, 5, color(31, 190, 217, 255));
     rl.drawText("SPEED BREAKER", 27, height - 45, 12, color(155, 174, 181, 255));
-    rl.drawText("WASD/ARROWS DRIVE  SPACE HANDBRAKE  R RESET", 27, height - 21, 11, color(122, 139, 148, 255));
+    rl.drawText("WASD/WHEEL DRIVE  SPACE HANDBRAKE  R RESET", 27, height - 21, 11, color(122, 139, 148, 255));
+
+    if (rl.isGamepadAvailable(0)) {
+        rl.drawText("DFP CONNECTED", width - 120, height - 21, 11, color(31, 190, 217, 255));
+    }
 }
 
 // === Loading screen ===
@@ -907,7 +936,7 @@ pub fn main() !void {
     while (!rl.windowShouldClose()) {
         const dt = @min(rl.getFrameTime(), 1.0 / 30.0);
         elapsed += dt;
-        if (rl.isKeyPressed(.r)) {
+        if (rl.isKeyPressed(.r) or rl.isGamepadButtonPressed(0, .middle)) {
             car.reset();
             camera_rig.reset(car);
         }
