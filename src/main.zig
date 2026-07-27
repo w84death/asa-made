@@ -138,6 +138,16 @@ fn color(r: u8, g: u8, b: u8, a: u8) rl.Color {
     return .{ .r = r, .g = g, .b = b, .a = a };
 }
 
+fn mixColor(a: rl.Color, b: rl.Color, amount: f32) rl.Color {
+    const t = std.math.clamp(amount, 0.0, 1.0);
+    return .{
+        .r = @intFromFloat(@as(f32, @floatFromInt(a.r)) + (@as(f32, @floatFromInt(b.r)) - @as(f32, @floatFromInt(a.r))) * t),
+        .g = @intFromFloat(@as(f32, @floatFromInt(a.g)) + (@as(f32, @floatFromInt(b.g)) - @as(f32, @floatFromInt(a.g))) * t),
+        .b = @intFromFloat(@as(f32, @floatFromInt(a.b)) + (@as(f32, @floatFromInt(b.b)) - @as(f32, @floatFromInt(a.b))) * t),
+        .a = @intFromFloat(@as(f32, @floatFromInt(a.a)) + (@as(f32, @floatFromInt(b.a)) - @as(f32, @floatFromInt(a.a))) * t),
+    };
+}
+
 fn trackPoint(t: f32) Vec2 {
     const long_straight = 2.0 * (track_half_x - corner_radius);
     const short_straight = track_half_z - corner_radius;
@@ -231,9 +241,61 @@ fn v3(v: Vec2, y: f32) rl.Vector3 {
     return .{ .x = v.x, .y = y, .z = v.z };
 }
 
-fn quad(a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, tint: rl.Color) void {
-    rl.drawTriangle3D(a, b, c, tint);
-    rl.drawTriangle3D(a, c, d, tint);
+fn vertex(position: rl.Vector3, tint: rl.Color) void {
+    rl.gl.rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+    rl.gl.rlVertex3f(position.x, position.y, position.z);
+}
+
+fn coloredQuad(a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, ca: rl.Color, cb: rl.Color, cc: rl.Color, cd: rl.Color) void {
+    rl.gl.rlBegin(rl.gl.rl_triangles);
+    vertex(a, ca);
+    vertex(b, cb);
+    vertex(c, cc);
+    vertex(a, ca);
+    vertex(c, cc);
+    vertex(d, cd);
+    rl.gl.rlEnd();
+}
+
+fn roadColorAt(index: usize) rl.Color {
+    const spacing: usize = 9;
+    const phase = index % spacing;
+    const distance = @min(phase, spacing - phase);
+    const light = 1.0 - std.math.clamp(@as(f32, @floatFromInt(distance)) / 3.5, 0.0, 1.0);
+    return mixColor(color(29, 28, 27, 255), color(77, 59, 41, 255), light * 0.78);
+}
+
+fn roadStrip(p0: Vec2, p1: Vec2, n0: Vec2, n1: Vec2, offset: f32, strip_width: f32, tint: rl.Color) void {
+    const a = add(p0, scale(n0, offset - strip_width * 0.5));
+    const b = add(p1, scale(n1, offset - strip_width * 0.5));
+    const c = add(p1, scale(n1, offset + strip_width * 0.5));
+    const d = add(p0, scale(n0, offset + strip_width * 0.5));
+    coloredQuad(v3(a, road_y + 0.035), v3(b, road_y + 0.035), v3(c, road_y + 0.035), v3(d, road_y + 0.035), tint, tint, tint, tint);
+}
+
+fn markingBetween(a: Vec2, b: Vec2, strip_width: f32, tint: rl.Color) void {
+    const direction = Vec2{ .x = b.x - a.x, .z = b.z - a.z };
+    const inv_len = 1.0 / vecLength(direction);
+    const side = Vec2{ .x = direction.z * inv_len * strip_width * 0.5, .z = -direction.x * inv_len * strip_width * 0.5 };
+    coloredQuad(v3(add(a, side), road_y + 0.04), v3(add(b, side), road_y + 0.04), v3(add(b, scale(side, -1.0)), road_y + 0.04), v3(add(a, scale(side, -1.0)), road_y + 0.04), tint, tint, tint, tint);
+}
+
+fn drawLightPool(center: Vec2, cool: bool) void {
+    const center_color = if (cool) color(71, 225, 218, 62) else color(255, 153, 62, 72);
+    const edge_color = color(35, 28, 22, 0);
+    const slices = 14;
+    var i: usize = 0;
+    while (i < slices) : (i += 1) {
+        const a0 = tau * @as(f32, @floatFromInt(i)) / slices;
+        const a1 = tau * @as(f32, @floatFromInt(i + 1)) / slices;
+        const p0 = Vec2{ .x = center.x + @cos(a0) * 5.5, .z = center.z + @sin(a0) * 8.5 };
+        const p1 = Vec2{ .x = center.x + @cos(a1) * 5.5, .z = center.z + @sin(a1) * 8.5 };
+        rl.gl.rlBegin(rl.gl.rl_triangles);
+        vertex(v3(center, road_y + 0.018), center_color);
+        vertex(v3(p1, road_y + 0.018), edge_color);
+        vertex(v3(p0, road_y + 0.018), edge_color);
+        rl.gl.rlEnd();
+    }
 }
 
 fn drawTrack() void {
@@ -249,29 +311,44 @@ fn drawTrack() void {
         const outer0 = add(p0, scale(n0, road_half_width));
         const inner1 = add(p1, scale(n1, -road_half_width));
         const outer1 = add(p1, scale(n1, road_half_width));
-        const asphalt = if (i % 2 == 0) color(31, 35, 42, 255) else color(35, 39, 47, 255);
-        quad(v3(inner0, road_y), v3(inner1, road_y), v3(outer1, road_y), v3(outer0, road_y), asphalt);
+        const asphalt0 = roadColorAt(i);
+        const asphalt1 = roadColorAt(i + 1);
+        coloredQuad(v3(inner0, road_y), v3(inner1, road_y), v3(outer1, road_y), v3(outer0, road_y), asphalt0, asphalt1, asphalt1, asphalt0);
 
-        rl.drawCylinderEx(v3(inner0, road_y + 0.62), v3(inner1, road_y + 0.62), 0.12, 0.12, 5, color(126, 141, 153, 255));
-        rl.drawCylinderEx(v3(outer0, road_y + 0.62), v3(outer1, road_y + 0.62), 0.12, 0.12, 5, color(126, 141, 153, 255));
+        rl.drawCylinderEx(v3(inner0, road_y + 0.62), v3(inner1, road_y + 0.62), 0.12, 0.12, 5, color(126, 116, 101, 255));
+        rl.drawCylinderEx(v3(outer0, road_y + 0.62), v3(outer1, road_y + 0.62), 0.12, 0.12, 5, color(126, 116, 101, 255));
+        roadStrip(p0, p1, n0, n1, -road_half_width + 0.55, 0.2, color(222, 218, 195, 255));
+        roadStrip(p0, p1, n0, n1, road_half_width - 0.55, 0.23, color(218, 142, 47, 255));
         if (i % 2 == 0) {
             for ([_]f32{ -3.0, 3.0 }) |lane| {
-                rl.drawLine3D(v3(add(p0, scale(n0, lane)), road_y + 0.025), v3(add(p1, scale(n1, lane)), road_y + 0.025), color(188, 197, 196, 205));
+                roadStrip(p0, p1, n0, n1, lane, 0.18, color(226, 224, 207, 245));
             }
+        }
+        if ((i >= 31 and i < 45) or (i >= 103 and i < 116)) {
+            if (i % 2 == 0) markingBetween(add(p0, scale(n0, -7.8)), add(p1, scale(n1, -4.4)), 0.16, color(216, 213, 196, 235));
         }
         if (i % 8 == 0) {
             rl.drawCylinder(v3(p0, 0.0), 0.55, 0.75, road_y, 7, color(42, 48, 56, 255));
         }
-        if (i % 7 == 0) drawStreetLight(outer0);
+        if (i % 9 == 0) {
+            const cool = (i / 9) % 5 == 2;
+            drawLightPool(add(p0, scale(n0, 3.2)), cool);
+            drawStreetLight(outer0, n0, cool);
+        }
     }
 }
 
-fn drawStreetLight(p: Vec2) void {
+fn drawStreetLight(p: Vec2, normal: Vec2, cool: bool) void {
     const base = v3(p, road_y);
     const top = v3(p, road_y + 5.0);
-    rl.drawCylinderEx(base, top, 0.09, 0.06, 6, color(70, 80, 91, 255));
-    rl.drawSphere(top, 0.42, color(255, 188, 82, 115));
-    rl.drawSphere(top, 0.13, color(255, 236, 179, 255));
+    const lamp_position = add(p, scale(normal, -2.8));
+    const lamp = v3(lamp_position, road_y + 4.85);
+    rl.drawCylinderEx(base, top, 0.09, 0.06, 6, color(73, 67, 59, 255));
+    rl.drawCylinderEx(top, lamp, 0.06, 0.045, 6, color(91, 79, 65, 255));
+    const glow = if (cool) color(65, 229, 221, 100) else color(255, 145, 53, 105);
+    const core = if (cool) color(204, 255, 239, 255) else color(255, 231, 177, 255);
+    rl.drawSphere(lamp, 0.4, glow);
+    rl.drawSphere(lamp, 0.13, core);
 }
 
 fn hash2(x: i32, z: i32) u32 {
@@ -281,7 +358,7 @@ fn hash2(x: i32, z: i32) u32 {
 }
 
 fn drawCity() void {
-    rl.drawPlane(.{ .x = 0, .y = -0.05, .z = 0 }, .{ .x = 330, .y = 250 }, color(9, 13, 20, 255));
+    rl.drawPlane(.{ .x = 0, .y = -0.05, .z = 0 }, .{ .x = 330, .y = 250 }, color(10, 10, 8, 255));
     var gx: i32 = -7;
     while (gx <= 7) : (gx += 1) {
         var gz: i32 = -5;
@@ -295,19 +372,19 @@ fn drawCity() void {
             const hsh = hash2(gx, gz);
             const height = 7.0 + @as(f32, @floatFromInt(hsh % 34));
             const width = 10.0 + @as(f32, @floatFromInt((hsh >> 6) % 5));
-            const facade = if (hsh % 3 == 0) color(27, 34, 48, 255) else color(34, 37, 46, 255);
+            const facade = if (hsh % 3 == 0) color(29, 27, 23, 255) else color(38, 33, 27, 255);
             rl.drawCube(.{ .x = x, .y = height * 0.5, .z = z }, width, height, width, facade);
-            rl.drawCubeWires(.{ .x = x, .y = height * 0.5, .z = z }, width, height, width, color(50, 57, 70, 255));
+            rl.drawCubeWires(.{ .x = x, .y = height * 0.5, .z = z }, width, height, width, color(58, 50, 39, 255));
 
             var floor: i32 = 1;
             while (@as(f32, @floatFromInt(floor)) * 3.2 < height - 1.0) : (floor += 1) {
                 if ((hsh +% @as(u32, @intCast(floor * 11))) % 4 == 0) continue;
                 const wy = @as(f32, @floatFromInt(floor)) * 3.2;
-                const glow = if ((hsh +% @as(u32, @intCast(floor))) % 5 == 0) color(72, 188, 209, 220) else color(246, 185, 88, 210);
+                const glow = if ((hsh +% @as(u32, @intCast(floor))) % 8 == 0) color(113, 208, 178, 220) else color(246, 174, 78, 210);
                 rl.drawCube(.{ .x = x, .y = wy, .z = z - width * 0.5 - 0.025 }, width * 0.52, 0.65, 0.05, glow);
             }
             if (hsh % 11 == 0) {
-                const neon = if (hsh % 2 == 0) color(232, 34, 105, 255) else color(34, 199, 221, 255);
+                const neon = if (hsh % 2 == 0) color(107, 223, 159, 255) else color(106, 82, 226, 255);
                 rl.drawCube(.{ .x = x, .y = height * 0.68, .z = z - width * 0.52 }, width * 0.72, 2.0, 0.16, neon);
             }
         }
@@ -328,27 +405,43 @@ fn boxOriented(center: Vec2, y: f32, width: f32, height: f32, length: f32, yaw: 
     const fr = localPoint(center, yaw, width * 0.5, length * 0.5);
     const y0 = y;
     const y1 = y + height;
-    quad(v3(bl, y0), v3(br, y0), v3(fr, y0), v3(fl, y0), tint);
-    quad(v3(fl, y1), v3(fr, y1), v3(br, y1), v3(bl, y1), tint);
-    quad(v3(bl, y0), v3(fl, y0), v3(fl, y1), v3(bl, y1), tint);
-    quad(v3(fr, y0), v3(br, y0), v3(br, y1), v3(fr, y1), tint);
-    quad(v3(br, y0), v3(bl, y0), v3(bl, y1), v3(br, y1), tint);
-    quad(v3(fl, y0), v3(fr, y0), v3(fr, y1), v3(fl, y1), tint);
+    const dark = mixColor(tint, color(6, 5, 4, tint.a), 0.55);
+    const side = mixColor(tint, color(24, 16, 10, tint.a), 0.3);
+    const top = mixColor(tint, color(255, 185, 104, tint.a), 0.24);
+    coloredQuad(v3(bl, y0), v3(br, y0), v3(fr, y0), v3(fl, y0), dark, dark, dark, dark);
+    coloredQuad(v3(fl, y1), v3(fr, y1), v3(br, y1), v3(bl, y1), top, top, top, top);
+    coloredQuad(v3(bl, y0), v3(fl, y0), v3(fl, y1), v3(bl, y1), side, side, tint, tint);
+    coloredQuad(v3(fr, y0), v3(br, y0), v3(br, y1), v3(fr, y1), side, side, tint, tint);
+    coloredQuad(v3(br, y0), v3(bl, y0), v3(bl, y1), v3(br, y1), dark, dark, side, side);
+    coloredQuad(v3(fl, y0), v3(fr, y0), v3(fr, y1), v3(fl, y1), side, side, top, top);
+}
+
+fn drawHeadlightWash(position: Vec2, yaw: f32) void {
+    const near_left = localPoint(position, yaw, -0.72, 2.0);
+    const near_right = localPoint(position, yaw, 0.72, 2.0);
+    const far_left = localPoint(position, yaw, -3.1, 12.5);
+    const far_right = localPoint(position, yaw, 3.1, 12.5);
+    const near = color(255, 224, 170, 48);
+    const far = color(255, 191, 102, 0);
+    coloredQuad(v3(near_left, road_y + 0.055), v3(far_left, road_y + 0.055), v3(far_right, road_y + 0.055), v3(near_right, road_y + 0.055), near, far, far, near);
 }
 
 fn drawCar(position: Vec2, yaw: f32, paint: rl.Color, player: bool) void {
+    drawHeadlightWash(position, yaw);
     boxOriented(position, road_y + 0.18, 2.05, 0.65, 4.25, yaw, paint);
     const cabin = localPoint(position, yaw, 0.0, -0.18);
     boxOriented(cabin, road_y + 0.82, 1.72, 0.62, 2.1, yaw, color(24, 42, 57, 255));
     const nose = localPoint(position, yaw, 0.0, 2.16);
     for ([_]f32{ -0.62, 0.62 }) |side| {
         const lamp = localPoint(nose, yaw, side, 0.0);
-        rl.drawSphere(v3(lamp, road_y + 0.58), 0.15, color(206, 234, 255, 255));
+        rl.drawSphere(v3(lamp, road_y + 0.58), 0.2, color(255, 227, 177, 105));
+        rl.drawSphere(v3(lamp, road_y + 0.58), 0.11, color(255, 249, 222, 255));
     }
     const tail = localPoint(position, yaw, 0.0, -2.16);
     for ([_]f32{ -0.68, 0.68 }) |side| {
         const lamp = localPoint(tail, yaw, side, 0.0);
-        rl.drawSphere(v3(lamp, road_y + 0.55), 0.14, color(255, 36, 44, 255));
+        rl.drawSphere(v3(lamp, road_y + 0.55), 0.22, color(255, 24, 19, 90));
+        rl.drawSphere(v3(lamp, road_y + 0.55), 0.11, color(255, 61, 38, 255));
     }
     if (player) {
         const wing_l = localPoint(position, yaw, -0.93, -1.75);
@@ -359,8 +452,8 @@ fn drawCar(position: Vec2, yaw: f32, paint: rl.Color, player: bool) void {
 
 fn drawTraffic(elapsed: f32) void {
     const paints = [_]rl.Color{
-        color(221, 225, 230, 255), color(37, 71, 137, 255),  color(176, 35, 49, 255),
-        color(67, 69, 73, 255),    color(220, 153, 36, 255), color(45, 120, 106, 255),
+        color(224, 218, 199, 255), color(31, 50, 117, 255),  color(151, 38, 30, 255),
+        color(38, 36, 32, 255),    color(186, 124, 42, 255), color(43, 91, 75, 255),
     };
     var i: usize = 0;
     while (i < 10) : (i += 1) {
@@ -428,8 +521,8 @@ pub fn main() !void {
 
         rl.beginDrawing();
         defer rl.endDrawing();
-        rl.clearBackground(color(4, 6, 13, 255));
-        rl.drawRectangleGradientV(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), color(7, 12, 28, 255), color(25, 18, 33, 255));
+        rl.clearBackground(color(4, 4, 3, 255));
+        rl.drawRectangleGradientV(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), color(3, 5, 5, 255), color(31, 20, 12, 255));
         camera.begin();
         drawCity();
         drawTrack();
