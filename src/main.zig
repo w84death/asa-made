@@ -324,7 +324,7 @@ fn drawHud(car: Car) void {
 }
 
 pub fn main() !void {
-    rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_resizable = true });
+    rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true });
     rl.initWindow(screen_width, screen_height, "KANJO NIGHT // Zig + raylib");
     defer rl.closeWindow();
     rl.setTargetFPS(60);
