@@ -15,9 +15,12 @@ const Vec2 = struct { x: f32, z: f32 };
 
 const Car = struct {
     position: Vec2 = .{ .x = track_half_x, .z = 0.0 },
+    velocity: Vec2 = .{ .x = 0.0, .z = 0.0 },
     yaw: f32 = 0.0,
+    yaw_rate: f32 = 0.0,
     speed: f32 = 0.0,
     steer_visual: f32 = 0.0,
+    drift_amount: f32 = 0.0,
 
     fn reset(self: *Car) void {
         self.* = .{};
@@ -31,18 +34,49 @@ const Car = struct {
         if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) steer -= 1.0;
         const handbrake = rl.isKeyDown(.space);
 
-        if (throttle > 0.0) self.speed += 34.0 * dt;
-        if (brake > 0.0) self.speed -= (if (self.speed > 0.0) @as(f32, 46.0) else 20.0) * dt;
-        self.speed -= self.speed * (if (handbrake) @as(f32, 1.9) else 0.22) * dt;
-        self.speed = std.math.clamp(self.speed, -16.0, 84.0);
+        var forward = Vec2{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
+        var right = Vec2{ .x = @cos(self.yaw), .z = -@sin(self.yaw) };
+        var longitudinal_speed = dot(self.velocity, forward);
+        var lateral_speed = dot(self.velocity, right);
 
-        const speed_factor = std.math.clamp(@abs(self.speed) / 12.0, 0.0, 1.0);
-        const turn_rate: f32 = if (handbrake) 1.75 else 1.15;
-        self.yaw += steer * turn_rate * speed_factor * dt * (if (self.speed < 0.0) @as(f32, -1.0) else 1.0);
+        if (throttle > 0.0) {
+            const power_falloff = 1.0 - 0.42 * std.math.clamp(@abs(longitudinal_speed) / 84.0, 0.0, 1.0);
+            self.velocity = add(self.velocity, scale(forward, 44.0 * power_falloff * dt));
+        }
+        if (brake > 0.0) {
+            const brake_force: f32 = if (longitudinal_speed > 1.0) -62.0 else -24.0;
+            self.velocity = add(self.velocity, scale(forward, brake_force * dt));
+        }
+
+        const speed_factor = std.math.clamp(@abs(longitudinal_speed) / 14.0, 0.0, 1.0);
+        const reverse_sign: f32 = if (longitudinal_speed < -0.5) -1.0 else 1.0;
+        const steering_rate: f32 = if (handbrake) 1.72 else 1.18;
+        const target_yaw_rate = steer * steering_rate * speed_factor * reverse_sign;
+        const yaw_response: f32 = if (handbrake) 7.5 else 5.0;
+        self.yaw_rate += (target_yaw_rate - self.yaw_rate) * std.math.clamp(yaw_response * dt, 0.0, 1.0);
+        if (handbrake and @abs(longitudinal_speed) > 18.0) self.yaw_rate += steer * 1.25 * dt * reverse_sign;
+        if (@abs(steer) < 0.05) self.yaw_rate *= std.math.clamp(1.0 - 3.2 * dt, 0.0, 1.0);
+        self.yaw += self.yaw_rate * dt;
+
+        // Recompute the tire axes after yaw changes. Reduced rear grip preserves sideways momentum during a drift.
+        forward = .{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
+        right = .{ .x = @cos(self.yaw), .z = -@sin(self.yaw) };
+        longitudinal_speed = dot(self.velocity, forward);
+        lateral_speed = dot(self.velocity, right);
+        var lateral_grip: f32 = if (handbrake) 0.72 else 6.8;
+        if (!handbrake and throttle > 0.0 and @abs(lateral_speed) > 4.5 and @abs(longitudinal_speed) > 24.0) lateral_grip = 2.7;
+        self.velocity = add(self.velocity, scale(right, -lateral_speed * std.math.clamp(lateral_grip * dt, 0.0, 1.0)));
+
+        const rolling_drag: f32 = if (handbrake) 0.52 else 0.105;
+        self.velocity = scale(self.velocity, std.math.clamp(1.0 - rolling_drag * dt, 0.0, 1.0));
+        const velocity_length = vecLength(self.velocity);
+        if (velocity_length > 84.0) self.velocity = scale(self.velocity, 84.0 / velocity_length);
+
+        self.position = add(self.position, scale(self.velocity, dt));
+        self.speed = dot(self.velocity, forward);
+        const drift_target = std.math.clamp(@abs(dot(self.velocity, right)) / 15.0, 0.0, 1.0) * speed_factor;
+        self.drift_amount += (drift_target - self.drift_amount) * std.math.clamp(dt * 7.0, 0.0, 1.0);
         self.steer_visual += (steer - self.steer_visual) * std.math.clamp(dt * 9.0, 0.0, 1.0);
-
-        self.position.x += @sin(self.yaw) * self.speed * dt;
-        self.position.z += @cos(self.yaw) * self.speed * dt;
 
         // Keep the prototype readable: barriers push the car back toward the road instead of stopping it dead.
         const nearest = nearestTrack(self.position);
@@ -52,7 +86,10 @@ const Car = struct {
             const excess = lateral - std.math.clamp(lateral, -limit, limit);
             self.position.x -= nearest.normal.x * excess;
             self.position.z -= nearest.normal.z * excess;
-            self.speed *= 0.78;
+            const normal_speed = dot(self.velocity, nearest.normal);
+            if (normal_speed * lateral > 0.0) self.velocity = add(self.velocity, scale(nearest.normal, -normal_speed * 1.25));
+            self.velocity = scale(self.velocity, 0.76);
+            self.speed = dot(self.velocity, forward);
         }
     }
 };
@@ -144,6 +181,10 @@ fn scale(v: Vec2, amount: f32) Vec2 {
 
 fn dot(a: Vec2, b: Vec2) f32 {
     return a.x * b.x + a.z * b.z;
+}
+
+fn vecLength(v: Vec2) f32 {
+    return @sqrt(dot(v, v));
 }
 
 fn v3(v: Vec2, y: f32) rl.Vector3 {
@@ -315,6 +356,9 @@ fn drawHud(car: Car) void {
     rl.drawText(speed_text, speed_x - 39, speed_y - 24, 38, color(239, 245, 241, 255));
     rl.drawText("KM/H", speed_x - 18, speed_y + 18, 13, color(74, 210, 224, 255));
     rl.drawText(if (car.speed < -0.5) "R" else "5", speed_x + 20, speed_y + 25, 22, color(245, 67, 104, 255));
+    if (car.drift_amount > 0.18) {
+        rl.drawText("DRIFT", speed_x - 25, speed_y - 58, 16, color(245, 67, 104, 255));
+    }
 
     rl.drawRectangle(27, height - 57, 205, 5, color(29, 40, 51, 230));
     const boost_width: i32 = @intFromFloat(205.0 * std.math.clamp(@abs(car.speed) / 84.0, 0.0, 1.0));
