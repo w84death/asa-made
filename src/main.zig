@@ -1,8 +1,8 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-const screen_width = 640;
-const screen_height = 480;
+const screen_width = 720;
+const screen_height = 360;
 const road_y: f32 = 2.2;
 const track_half_x: f32 = 118.0;
 const track_half_z: f32 = 52.0;
@@ -10,6 +10,38 @@ const corner_radius: f32 = 24.0;
 const road_half_width: f32 = 9.0;
 const segment_count = 144;
 const tau: f32 = std.math.pi * 2.0;
+
+const car_vertex_shader =
+    \\#version 330
+    \\in vec3 vertexPosition;
+    \\in vec3 vertexNormal;
+    \\in vec2 vertexTexCoord;
+    \\in vec4 vertexColor;
+    \\uniform mat4 mvp;
+    \\out vec2 fragTexCoord;
+    \\out vec4 fragColor;
+    \\void main() {
+    \\    float top = max(vertexNormal.y, 0.0);
+    \\    float side = max(dot(normalize(vertexNormal), normalize(vec3(-0.45, 0.35, 0.82))), 0.0);
+    \\    vec3 sodium = vec3(1.0, 0.68, 0.38);
+    \\    vec3 lighting = vec3(0.22, 0.20, 0.18) + sodium * (top * 0.42 + side * 0.28);
+    \\    fragTexCoord = vertexTexCoord;
+    \\    fragColor = vec4(lighting, 1.0) * vertexColor;
+    \\    gl_Position = mvp * vec4(vertexPosition, 1.0);
+    \\}
+;
+
+const car_fragment_shader =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\uniform sampler2D texture0;
+    \\uniform vec4 colDiffuse;
+    \\out vec4 finalColor;
+    \\void main() {
+    \\    finalColor = texture(texture0, fragTexCoord) * fragColor * colDiffuse;
+    \\}
+;
 
 const Vec2 = struct { x: f32, z: f32 };
 
@@ -115,7 +147,7 @@ const CameraRig = struct {
         const yaw_delta = @mod(car.yaw - self.yaw + std.math.pi, tau) - std.math.pi;
         self.yaw += yaw_delta * std.math.clamp(dt * 8.5, 0.0, 1.0);
         const camera_forward = Vec2{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
-        const camera_distance = 10.5 + std.math.clamp(@abs(car.speed) * 0.055, 0.0, 3.5);
+        const camera_distance = 10.5 - std.math.clamp(@abs(car.speed) * 0.018, 0.0, 1.5);
         return .{
             .position = .{
                 .x = self.anchor.x - camera_forward.x * camera_distance,
@@ -131,6 +163,50 @@ const CameraRig = struct {
             .fovy = 67.0 + std.math.clamp(@abs(car.speed) * 0.11, 0.0, 7.0),
             .projection = .perspective,
         };
+    }
+};
+
+const PlayerModel = struct {
+    model: rl.Model,
+    shader: rl.Shader,
+    bounds: rl.BoundingBox,
+    scale: f32,
+
+    fn init() !PlayerModel {
+        var model = try rl.loadModel("assets/civic-raylib.glb");
+        errdefer model.unload();
+        const shader = try rl.loadShaderFromMemory(car_vertex_shader, car_fragment_shader);
+        errdefer shader.unload();
+        var i: usize = 0;
+        while (i < @as(usize, @intCast(model.materialCount))) : (i += 1) model.materials[i].shader = shader;
+
+        const bounds = rl.getModelBoundingBox(model);
+        const model_length = @max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
+        return .{ .model = model, .shader = shader, .bounds = bounds, .scale = 4.35 / model_length };
+    }
+
+    fn unload(self: PlayerModel) void {
+        self.model.unload();
+        self.shader.unload();
+    }
+
+    fn draw(self: PlayerModel, position: Vec2, yaw: f32) void {
+        const angle = yaw + std.math.pi * 0.5;
+        const center_x = (self.bounds.min.x + self.bounds.max.x) * 0.5;
+        const center_z = (self.bounds.min.z + self.bounds.max.z) * 0.5;
+        const rotated_center_x = center_x * @cos(angle) + center_z * @sin(angle);
+        const rotated_center_z = -center_x * @sin(angle) + center_z * @cos(angle);
+        self.model.drawEx(
+            .{
+                .x = position.x - rotated_center_x * self.scale,
+                .y = road_y + 0.14 - self.bounds.min.y * self.scale,
+                .z = position.z - rotated_center_z * self.scale,
+            },
+            .{ .x = 0.0, .y = 1.0, .z = 0.0 },
+            angle * 180.0 / std.math.pi,
+            .{ .x = self.scale, .y = self.scale, .z = self.scale },
+            color(255, 255, 255, 255),
+        );
     }
 };
 
@@ -426,7 +502,7 @@ fn drawHeadlightWash(position: Vec2, yaw: f32) void {
     coloredQuad(v3(near_left, road_y + 0.055), v3(far_left, road_y + 0.055), v3(far_right, road_y + 0.055), v3(near_right, road_y + 0.055), near, far, far, near);
 }
 
-fn drawCar(position: Vec2, yaw: f32, paint: rl.Color, player: bool) void {
+fn drawCar(position: Vec2, yaw: f32, paint: rl.Color) void {
     drawHeadlightWash(position, yaw);
     boxOriented(position, road_y + 0.18, 2.05, 0.65, 4.25, yaw, paint);
     const cabin = localPoint(position, yaw, 0.0, -0.18);
@@ -443,10 +519,22 @@ fn drawCar(position: Vec2, yaw: f32, paint: rl.Color, player: bool) void {
         rl.drawSphere(v3(lamp, road_y + 0.55), 0.22, color(255, 24, 19, 90));
         rl.drawSphere(v3(lamp, road_y + 0.55), 0.11, color(255, 61, 38, 255));
     }
-    if (player) {
-        const wing_l = localPoint(position, yaw, -0.93, -1.75);
-        const wing_r = localPoint(position, yaw, 0.93, -1.75);
-        rl.drawCylinderEx(v3(wing_l, road_y + 1.25), v3(wing_r, road_y + 1.25), 0.06, 0.06, 5, color(18, 20, 25, 255));
+}
+
+fn drawPlayerCar(player_model: PlayerModel, position: Vec2, yaw: f32) void {
+    drawHeadlightWash(position, yaw);
+    player_model.draw(position, yaw);
+    const nose = localPoint(position, yaw, 0.0, 2.16);
+    for ([_]f32{ -0.62, 0.62 }) |side| {
+        const lamp = localPoint(nose, yaw, side, 0.0);
+        rl.drawSphere(v3(lamp, road_y + 0.58), 0.2, color(255, 227, 177, 105));
+        rl.drawSphere(v3(lamp, road_y + 0.58), 0.11, color(255, 249, 222, 255));
+    }
+    const tail = localPoint(position, yaw, 0.0, -2.16);
+    for ([_]f32{ -0.68, 0.68 }) |side| {
+        const lamp = localPoint(tail, yaw, side, 0.0);
+        rl.drawSphere(v3(lamp, road_y + 0.55), 0.22, color(255, 24, 19, 90));
+        rl.drawSphere(v3(lamp, road_y + 0.55), 0.11, color(255, 61, 38, 255));
     }
 }
 
@@ -466,7 +554,7 @@ fn drawTraffic(elapsed: f32) void {
         const before = trackPoint(t - 0.001);
         const after = trackPoint(t + 0.001);
         const tangent = Vec2{ .x = after.x - before.x, .z = after.z - before.z };
-        drawCar(pos, std.math.atan2(tangent.x, tangent.z), paints[i % paints.len], false);
+        drawCar(pos, std.math.atan2(tangent.x, tangent.z), paints[i % paints.len]);
     }
 }
 
@@ -506,6 +594,9 @@ pub fn main() !void {
     defer rl.closeWindow();
     rl.setTargetFPS(60);
 
+    const player_model = try PlayerModel.init();
+    defer player_model.unload();
+
     var car = Car{};
     var camera_rig = CameraRig{};
     var elapsed: f32 = 0.0;
@@ -527,7 +618,7 @@ pub fn main() !void {
         drawCity();
         drawTrack();
         drawTraffic(elapsed);
-        drawCar(car.position, car.yaw, color(70, 191, 216, 255), true);
+        drawPlayerCar(player_model, car.position, car.yaw);
         camera.end();
         drawHud(car);
     }

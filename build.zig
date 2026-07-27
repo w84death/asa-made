@@ -24,6 +24,12 @@ pub fn build(b: *std.Build) void {
         .root_module = app_module,
     });
     b.installArtifact(executable);
+    const install_assets = b.addInstallDirectory(.{
+        .source_dir = b.path("assets"),
+        .install_dir = .bin,
+        .install_subdir = "assets",
+    });
+    b.getInstallStep().dependOn(&install_assets.step);
 
     const run_artifact = b.addRunArtifact(executable);
     run_artifact.step.dependOn(b.getInstallStep());
