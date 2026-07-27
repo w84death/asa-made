@@ -94,6 +94,46 @@ const Car = struct {
     }
 };
 
+const CameraRig = struct {
+    anchor: Vec2 = .{ .x = track_half_x, .z = 0.0 },
+    yaw: f32 = 0.0,
+
+    fn reset(self: *CameraRig, car: Car) void {
+        self.anchor = car.position;
+        self.yaw = car.yaw;
+    }
+
+    fn update(self: *CameraRig, car: Car, dt: f32) rl.Camera3D {
+        const offset = Vec2{ .x = car.position.x - self.anchor.x, .z = car.position.z - self.anchor.z };
+        const offset_length = vecLength(offset);
+        const dead_zone: f32 = 0.72;
+        if (offset_length > dead_zone) {
+            const desired_anchor = add(car.position, scale(offset, -dead_zone / offset_length));
+            self.anchor = add(self.anchor, scale(.{ .x = desired_anchor.x - self.anchor.x, .z = desired_anchor.z - self.anchor.z }, std.math.clamp(dt * 11.0, 0.0, 1.0)));
+        }
+
+        const yaw_delta = @mod(car.yaw - self.yaw + std.math.pi, tau) - std.math.pi;
+        self.yaw += yaw_delta * std.math.clamp(dt * 8.5, 0.0, 1.0);
+        const camera_forward = Vec2{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
+        const camera_distance = 10.5 + std.math.clamp(@abs(car.speed) * 0.055, 0.0, 3.5);
+        return .{
+            .position = .{
+                .x = self.anchor.x - camera_forward.x * camera_distance,
+                .y = road_y + 5.2,
+                .z = self.anchor.z - camera_forward.z * camera_distance,
+            },
+            .target = .{
+                .x = self.anchor.x + camera_forward.x * 5.5,
+                .y = road_y + 1.15,
+                .z = self.anchor.z + camera_forward.z * 5.5,
+            },
+            .up = .{ .x = 0, .y = 1, .z = 0 },
+            .fovy = 67.0 + std.math.clamp(@abs(car.speed) * 0.11, 0.0, 7.0),
+            .projection = .perspective,
+        };
+    }
+};
+
 fn color(r: u8, g: u8, b: u8, a: u8) rl.Color {
     return .{ .r = r, .g = g, .b = b, .a = a };
 }
@@ -374,30 +414,17 @@ pub fn main() !void {
     rl.setTargetFPS(60);
 
     var car = Car{};
+    var camera_rig = CameraRig{};
     var elapsed: f32 = 0.0;
     while (!rl.windowShouldClose()) {
         const dt = @min(rl.getFrameTime(), 1.0 / 30.0);
         elapsed += dt;
-        if (rl.isKeyPressed(.r)) car.reset();
+        if (rl.isKeyPressed(.r)) {
+            car.reset();
+            camera_rig.reset(car);
+        }
         car.update(dt);
-
-        const forward = Vec2{ .x = @sin(car.yaw), .z = @cos(car.yaw) };
-        const camera_distance = 10.5 + std.math.clamp(@abs(car.speed) * 0.055, 0.0, 3.5);
-        const camera = rl.Camera3D{
-            .position = .{
-                .x = car.position.x - forward.x * camera_distance,
-                .y = road_y + 5.2,
-                .z = car.position.z - forward.z * camera_distance,
-            },
-            .target = .{
-                .x = car.position.x + forward.x * 5.5,
-                .y = road_y + 1.15,
-                .z = car.position.z + forward.z * 5.5,
-            },
-            .up = .{ .x = 0, .y = 1, .z = 0 },
-            .fovy = 67.0 + std.math.clamp(@abs(car.speed) * 0.11, 0.0, 7.0),
-            .projection = .perspective,
-        };
+        const camera = camera_rig.update(car, dt);
 
         rl.beginDrawing();
         defer rl.endDrawing();
