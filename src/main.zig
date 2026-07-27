@@ -162,11 +162,9 @@ fn loadWorld() !void {
     g_arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     const a = g_arena.allocator();
 
-    const t0 = std.time.milliTimestamp();
     const json_bytes = @embedFile("loop_scene.json");
     const parsed = try std.json.parseFromSliceLeaky(std.json.Value, a, json_bytes, .{});
     const root = parsed.object;
-    std.debug.print("JSON parsed in {d}ms\n", .{std.time.milliTimestamp() - t0});
 
     // --- Route points ---
     const route_arr = root.get("route").?.object.get("points").?.array;
@@ -799,7 +797,7 @@ fn drawHud(car: Car) void {
     const sy = height - 94;
 
     rl.drawRectangleGradientV(0, 0, width, 88, color(4, 8, 15, 185), color(4, 8, 15, 0));
-    rl.drawText("KANJO NIGHT", 28, 22, 24, color(224, 237, 239, 255));
+    rl.drawText("ASA MADE", 28, 22, 24, color(224, 237, 239, 255));
     rl.drawText("HANSHIN LOOP // OSAKA", 29, 50, 12, color(66, 201, 219, 255));
     rl.drawFPS(width - 92, 18);
 
@@ -822,20 +820,80 @@ fn drawHud(car: Car) void {
     rl.drawText("WASD/ARROWS DRIVE  SPACE HANDBRAKE  R RESET", 27, height - 21, 11, color(122, 139, 148, 255));
 }
 
+// === Loading screen ===
+var g_load_anim: f32 = 0;
+var g_title_tex: rl.Texture2D = undefined;
+
+fn drawLoading(stage: [:0]const u8) void {
+    g_load_anim += 0.15;
+    rl.beginDrawing();
+    defer rl.endDrawing();
+    rl.clearBackground(color(4, 4, 3, 255));
+
+    // Title image background (cover-fit)
+    const img_w: f32 = @floatFromInt(g_title_tex.width);
+    const img_h: f32 = @floatFromInt(g_title_tex.height);
+    const scr_w: f32 = @floatFromInt(screen_width);
+    const scr_h: f32 = @floatFromInt(screen_height);
+    const cover_scale = @max(scr_w / img_w, scr_h / img_h);
+    const draw_w = img_w * cover_scale;
+    const draw_h = img_h * cover_scale;
+    rl.drawTexturePro(
+        g_title_tex,
+        .{ .x = 0, .y = 0, .width = img_w, .height = img_h },
+        .{ .x = (scr_w - draw_w) * 0.5, .y = (scr_h - draw_h) * 0.5, .width = draw_w, .height = draw_h },
+        .{ .x = 0, .y = 0 },
+        0,
+        color(255, 255, 255, 255),
+    );
+    // Dark overlay for text readability
+    rl.drawRectangle(0, 0, screen_width, screen_height, color(4, 6, 10, 140));
+
+    const cx = screen_width / 2;
+    const cy = screen_height / 2;
+
+    // Title
+    rl.drawText("ASA MADE", cx - 90, cy - 50, 30, color(224, 237, 239, 255));
+    rl.drawText("HANSHIN EXPRESSWAY LOOP", cx - 120, cy - 18, 12, color(66, 201, 219, 255));
+
+    // Stage text
+    rl.drawText(stage, cx - 80, cy + 20, 16, color(66, 201, 219, 255));
+
+    // Pulsing progress bar
+    const bar_w = 200;
+    const bar_x = cx - bar_w / 2;
+    const bar_y = cy + 50;
+    rl.drawRectangle(bar_x, bar_y, bar_w, 4, color(20, 28, 35, 255));
+    const pulse = 0.5 + 0.5 * @sin(g_load_anim * 3.0);
+    rl.drawRectangle(bar_x, bar_y, @intFromFloat(@as(f32, @floatFromInt(bar_w)) * pulse), 4, color(31, 190, 217, 255));
+}
+
 // === Main ===
 pub fn main() !void {
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true });
-    rl.initWindow(screen_width, screen_height, "KANJO NIGHT // Hanshin Loop");
+    rl.initWindow(screen_width, screen_height, "ASA MADE");
     defer rl.closeWindow();
     rl.setTargetFPS(60);
     rl.gl.rlSetClipPlanes(0.05, 4000.0);
 
+    g_title_tex = try rl.loadTexture("assets/title.png");
+    defer rl.unloadTexture(g_title_tex);
+
+    drawLoading("LOADING MAP DATA");
     try loadWorld();
+
     g_flat_shader = try rl.loadShaderFromMemory(flat_vs, flat_fs);
+
+    drawLoading("BAKING ROAD");
     try bakeRoadMesh();
+
+    drawLoading("BAKING BUILDINGS");
     try bakeBuildingMesh();
+
+    drawLoading("BAKING LIGHTS");
     try bakeLightPoolMesh();
 
+    drawLoading("LOADING VEHICLE");
     const player_model = try PlayerModel.init();
     defer player_model.unload();
 
