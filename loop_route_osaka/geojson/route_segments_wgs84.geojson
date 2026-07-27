@@ -1,0 +1,2468 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 148654292,
+        "relation_role": "link",
+        "relation_order": 0,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "2",
+        "layer": "3",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.494552,
+            34.6679423
+          ],
+          [
+            135.4947862,
+            34.6679163
+          ],
+          [
+            135.4951215,
+            34.667882
+          ],
+          [
+            135.4952973,
+            34.6678697
+          ],
+          [
+            135.495438,
+            34.6678656
+          ],
+          [
+            135.4955753,
+            34.667869
+          ],
+          [
+            135.495718,
+            34.6678864
+          ],
+          [
+            135.4958718,
+            34.6679183
+          ],
+          [
+            135.496015,
+            34.6679645
+          ],
+          [
+            135.4961523,
+            34.6680269
+          ],
+          [
+            135.496287,
+            34.6681034
+          ],
+          [
+            135.4963989,
+            34.6681876
+          ],
+          [
+            135.4965117,
+            34.6682906
+          ],
+          [
+            135.4965982,
+            34.6683907
+          ],
+          [
+            135.4966696,
+            34.6684992
+          ],
+          [
+            135.4967303,
+            34.6686166
+          ],
+          [
+            135.4967698,
+            34.668746
+          ],
+          [
+            135.4968106,
+            34.6689208
+          ],
+          [
+            135.4968808,
+            34.6692716
+          ],
+          [
+            135.4969189,
+            34.6694829
+          ],
+          [
+            135.4971717,
+            34.6707566
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 126721137,
+        "relation_role": "forward",
+        "relation_order": 1,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "3",
+        "layer": "3",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4973778,
+            34.6683951
+          ],
+          [
+            135.4972682,
+            34.6685593
+          ],
+          [
+            135.4971954,
+            34.6686687
+          ],
+          [
+            135.4971489,
+            34.6687641
+          ],
+          [
+            135.4971048,
+            34.6688747
+          ],
+          [
+            135.4970741,
+            34.6689896
+          ],
+          [
+            135.4970551,
+            34.6690948
+          ],
+          [
+            135.4970441,
+            34.6692441
+          ],
+          [
+            135.4970499,
+            34.6694356
+          ],
+          [
+            135.4971717,
+            34.6707566
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 172129355,
+        "relation_role": "forward",
+        "relation_order": 2,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "2",
+        "layer": "2",
+        "lit": "yes",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:fr": "Boucle 1 de l'autoroute Hanshin",
+        "name:ja": "阪神高速1号環状線",
+        "name:ja-Hira": "はんしんこうそく1ごうかんじょうせん",
+        "name:ja-Latn": "Hanshin kōsoku 1-gō kanjō-sen",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes",
+        "wikidata": "Q11656965"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5060478,
+            34.6553816
+          ],
+          [
+            135.5050227,
+            34.6554938
+          ],
+          [
+            135.5036895,
+            34.6556301
+          ],
+          [
+            135.5028552,
+            34.6557228
+          ],
+          [
+            135.5020374,
+            34.6558098
+          ],
+          [
+            135.5018203,
+            34.6558388
+          ],
+          [
+            135.5017084,
+            34.6558597
+          ],
+          [
+            135.5015963,
+            34.6558867
+          ],
+          [
+            135.501487,
+            34.6559262
+          ],
+          [
+            135.5013706,
+            34.6559771
+          ],
+          [
+            135.5012708,
+            34.6560336
+          ],
+          [
+            135.5011667,
+            34.6561094
+          ],
+          [
+            135.50108,
+            34.6561923
+          ],
+          [
+            135.5010002,
+            34.6562883
+          ],
+          [
+            135.5009292,
+            34.656391
+          ],
+          [
+            135.5008732,
+            34.656504
+          ],
+          [
+            135.5008228,
+            34.6566246
+          ],
+          [
+            135.5007889,
+            34.6567364
+          ],
+          [
+            135.5007034,
+            34.6573858
+          ],
+          [
+            135.500641,
+            34.6577157
+          ],
+          [
+            135.500543,
+            34.6580324
+          ],
+          [
+            135.5003662,
+            34.6584959
+          ],
+          [
+            135.5003474,
+            34.6585843
+          ],
+          [
+            135.5003163,
+            34.6587305
+          ],
+          [
+            135.5003109,
+            34.6589533
+          ],
+          [
+            135.5003537,
+            34.6592289
+          ],
+          [
+            135.5004838,
+            34.6599341
+          ],
+          [
+            135.5006335,
+            34.6610453
+          ],
+          [
+            135.5007024,
+            34.6615834
+          ],
+          [
+            135.5007282,
+            34.6617338
+          ],
+          [
+            135.5007779,
+            34.6618919
+          ],
+          [
+            135.500918,
+            34.6624
+          ],
+          [
+            135.5009535,
+            34.6625654
+          ],
+          [
+            135.5009743,
+            34.6626929
+          ],
+          [
+            135.5009752,
+            34.6628224
+          ],
+          [
+            135.5009542,
+            34.6629621
+          ],
+          [
+            135.5009164,
+            34.6630758
+          ],
+          [
+            135.5009104,
+            34.6630866
+          ],
+          [
+            135.5008046,
+            34.6632765
+          ],
+          [
+            135.5002147,
+            34.6641531
+          ],
+          [
+            135.4995773,
+            34.6650344
+          ],
+          [
+            135.4990704,
+            34.6657217
+          ],
+          [
+            135.4987205,
+            34.6662392
+          ],
+          [
+            135.498039,
+            34.6673094
+          ],
+          [
+            135.4977085,
+            34.667842
+          ],
+          [
+            135.4973778,
+            34.6683951
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 172129346,
+        "relation_role": "forward",
+        "relation_order": 3,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "layer": "2",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5087419,
+            34.6567763
+          ],
+          [
+            135.508565,
+            34.6561988
+          ],
+          [
+            135.5085104,
+            34.6560248
+          ],
+          [
+            135.508473,
+            34.6559132
+          ],
+          [
+            135.5084302,
+            34.6557972
+          ],
+          [
+            135.5083928,
+            34.6557151
+          ],
+          [
+            135.508345,
+            34.6556295
+          ],
+          [
+            135.5082818,
+            34.6555444
+          ],
+          [
+            135.5082112,
+            34.6554743
+          ],
+          [
+            135.5081247,
+            34.6554081
+          ],
+          [
+            135.5080394,
+            34.6553557
+          ],
+          [
+            135.5079406,
+            34.6553076
+          ],
+          [
+            135.5078343,
+            34.6552722
+          ],
+          [
+            135.5077156,
+            34.6552478
+          ],
+          [
+            135.5076017,
+            34.6552356
+          ],
+          [
+            135.507481,
+            34.6552326
+          ],
+          [
+            135.5073563,
+            34.6552385
+          ],
+          [
+            135.5072284,
+            34.6552487
+          ],
+          [
+            135.5060478,
+            34.6553816
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 915941381,
+        "relation_role": "forward",
+        "relation_order": 4,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "2",
+        "layer": "3",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.510541,
+            34.6694345
+          ],
+          [
+            135.510454,
+            34.6678522
+          ],
+          [
+            135.5104348,
+            34.667583
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 126721151,
+        "relation_role": "forward",
+        "relation_order": 5,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "2",
+        "layer": "2",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5104348,
+            34.667583
+          ],
+          [
+            135.5103389,
+            34.6664524
+          ],
+          [
+            135.5102038,
+            34.6649864
+          ],
+          [
+            135.5100786,
+            34.6637899
+          ],
+          [
+            135.5100435,
+            34.6635139
+          ],
+          [
+            135.5098701,
+            34.6625448
+          ],
+          [
+            135.509783,
+            34.6620934
+          ],
+          [
+            135.5096231,
+            34.66137
+          ],
+          [
+            135.5094627,
+            34.6606149
+          ],
+          [
+            135.5093149,
+            34.6598412
+          ],
+          [
+            135.509244,
+            34.659424
+          ],
+          [
+            135.5090484,
+            34.6581559
+          ],
+          [
+            135.5087419,
+            34.6567763
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 126721147,
+        "relation_role": "forward",
+        "relation_order": 6,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "5",
+        "layer": "3",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5108481,
+            34.6786938
+          ],
+          [
+            135.5108639,
+            34.6776794
+          ],
+          [
+            135.510872,
+            34.6773742
+          ],
+          [
+            135.510882,
+            34.6763364
+          ],
+          [
+            135.5108536,
+            34.674831
+          ],
+          [
+            135.5108186,
+            34.6739447
+          ],
+          [
+            135.5107581,
+            34.6728687
+          ],
+          [
+            135.510541,
+            34.6694345
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 126721149,
+        "relation_role": "forward",
+        "relation_order": 7,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "4",
+        "layer": "3",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5098707,
+            34.685769
+          ],
+          [
+            135.509913,
+            34.6840077
+          ],
+          [
+            135.5099223,
+            34.6835377
+          ],
+          [
+            135.5099266,
+            34.6833555
+          ],
+          [
+            135.5099336,
+            34.6832188
+          ],
+          [
+            135.5099434,
+            34.6830896
+          ],
+          [
+            135.5099585,
+            34.6829758
+          ],
+          [
+            135.5099808,
+            34.6828509
+          ],
+          [
+            135.5100101,
+            34.6827265
+          ],
+          [
+            135.510048,
+            34.6826044
+          ],
+          [
+            135.5101016,
+            34.6824711
+          ],
+          [
+            135.5101692,
+            34.6823312
+          ],
+          [
+            135.5103538,
+            34.6820144
+          ],
+          [
+            135.5104346,
+            34.6818738
+          ],
+          [
+            135.5105124,
+            34.681713
+          ],
+          [
+            135.5105835,
+            34.6815495
+          ],
+          [
+            135.510653,
+            34.6813616
+          ],
+          [
+            135.5107038,
+            34.6811832
+          ],
+          [
+            135.5107353,
+            34.6810095
+          ],
+          [
+            135.5107587,
+            34.6808261
+          ],
+          [
+            135.5107689,
+            34.6806403
+          ],
+          [
+            135.510786,
+            34.6803181
+          ],
+          [
+            135.5108223,
+            34.6795878
+          ],
+          [
+            135.5108481,
+            34.6786938
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 172129365,
+        "relation_role": "forward",
+        "relation_order": 8,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "4",
+        "layer": "3",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5096815,
+            34.6911107
+          ],
+          [
+            135.5097254,
+            34.6909622
+          ],
+          [
+            135.5097501,
+            34.6906333
+          ],
+          [
+            135.5097612,
+            34.6903144
+          ],
+          [
+            135.509823,
+            34.6876066
+          ],
+          [
+            135.5098644,
+            34.6861525
+          ],
+          [
+            135.5098707,
+            34.685769
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 126721153,
+        "relation_role": "forward",
+        "relation_order": 9,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "image": "https://photos.app.goo.gl/Vjuw4oVA798b81mK9",
+        "lanes": "3",
+        "layer": "3",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.506254,
+            34.6938487
+          ],
+          [
+            135.5067269,
+            34.6936373
+          ],
+          [
+            135.5073093,
+            34.693406
+          ],
+          [
+            135.5085037,
+            34.6929609
+          ],
+          [
+            135.5086239,
+            34.692915
+          ],
+          [
+            135.5087366,
+            34.6928655
+          ],
+          [
+            135.5088258,
+            34.6928213
+          ],
+          [
+            135.508899,
+            34.6927801
+          ],
+          [
+            135.5090083,
+            34.6927105
+          ],
+          [
+            135.5091036,
+            34.6926382
+          ],
+          [
+            135.5091718,
+            34.6925738
+          ],
+          [
+            135.509225,
+            34.6925136
+          ],
+          [
+            135.509269,
+            34.6924569
+          ],
+          [
+            135.5093093,
+            34.6923929
+          ],
+          [
+            135.5093519,
+            34.6923163
+          ],
+          [
+            135.5093803,
+            34.6922507
+          ],
+          [
+            135.5094114,
+            34.6921787
+          ],
+          [
+            135.5094475,
+            34.6920666
+          ],
+          [
+            135.5095312,
+            34.6917616
+          ],
+          [
+            135.5096064,
+            34.6914686
+          ],
+          [
+            135.5096412,
+            34.691311
+          ],
+          [
+            135.5096815,
+            34.6911107
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 126721145,
+        "relation_role": "forward",
+        "relation_order": 10,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "4",
+        "layer": "3",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5044045,
+            34.6946325
+          ],
+          [
+            135.5046915,
+            34.6945239
+          ],
+          [
+            135.5049399,
+            34.6943939
+          ],
+          [
+            135.506254,
+            34.6938487
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 126721141,
+        "relation_role": "forward",
+        "relation_order": 11,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "4",
+        "layer": "3",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5010658,
+            34.6950179
+          ],
+          [
+            135.5015534,
+            34.6949948
+          ],
+          [
+            135.5020144,
+            34.6949651
+          ],
+          [
+            135.5025258,
+            34.6949244
+          ],
+          [
+            135.5029908,
+            34.6948797
+          ],
+          [
+            135.5032666,
+            34.6948527
+          ],
+          [
+            135.5036413,
+            34.6948067
+          ],
+          [
+            135.5039184,
+            34.6947627
+          ],
+          [
+            135.5041581,
+            34.6947077
+          ],
+          [
+            135.5044045,
+            34.6946325
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 154410796,
+        "relation_role": "forward",
+        "relation_order": 12,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "3",
+        "layer": "3",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5000037,
+            34.6950305
+          ],
+          [
+            135.5005024,
+            34.6950289
+          ],
+          [
+            135.50094,
+            34.6950213
+          ],
+          [
+            135.5010658,
+            34.6950179
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 913523379,
+        "relation_role": "forward",
+        "relation_order": 13,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "2",
+        "layer": "3",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4984972,
+            34.6949021
+          ],
+          [
+            135.4988031,
+            34.6949387
+          ],
+          [
+            135.4991145,
+            34.6949687
+          ],
+          [
+            135.5000037,
+            34.6950305
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 87365315,
+        "relation_role": "forward",
+        "relation_order": 14,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "2",
+        "layer": "2",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4975358,
+            34.6916016
+          ],
+          [
+            135.4975342,
+            34.6917336
+          ],
+          [
+            135.4975406,
+            34.69186
+          ],
+          [
+            135.4975561,
+            34.6920048
+          ],
+          [
+            135.4975791,
+            34.6921445
+          ],
+          [
+            135.4976056,
+            34.692275
+          ],
+          [
+            135.497683,
+            34.6925875
+          ],
+          [
+            135.4977321,
+            34.6927893
+          ],
+          [
+            135.4977598,
+            34.6929315
+          ],
+          [
+            135.4977745,
+            34.6930688
+          ],
+          [
+            135.4977777,
+            34.6932004
+          ],
+          [
+            135.4977798,
+            34.6932193
+          ],
+          [
+            135.497772,
+            34.6933475
+          ],
+          [
+            135.4977511,
+            34.6934942
+          ],
+          [
+            135.497676,
+            34.6939037
+          ],
+          [
+            135.4976581,
+            34.6940234
+          ],
+          [
+            135.4976512,
+            34.6941396
+          ],
+          [
+            135.4976575,
+            34.6942333
+          ],
+          [
+            135.4976758,
+            34.6943214
+          ],
+          [
+            135.4977073,
+            34.6944011
+          ],
+          [
+            135.4977507,
+            34.694481
+          ],
+          [
+            135.4978071,
+            34.694562
+          ],
+          [
+            135.4978713,
+            34.6946341
+          ],
+          [
+            135.497948,
+            34.6947001
+          ],
+          [
+            135.4980358,
+            34.6947602
+          ],
+          [
+            135.4981425,
+            34.6948143
+          ],
+          [
+            135.498259,
+            34.6948564
+          ],
+          [
+            135.4983774,
+            34.6948848
+          ],
+          [
+            135.4984972,
+            34.6949021
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 1245760339,
+        "relation_role": "forward",
+        "relation_order": 15,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "2",
+        "layer": "2",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4976046,
+            34.6904403
+          ],
+          [
+            135.4975482,
+            34.691364
+          ],
+          [
+            135.4975436,
+            34.6914531
+          ],
+          [
+            135.4975358,
+            34.6916016
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 864484148,
+        "relation_role": "forward",
+        "relation_order": 16,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "4",
+        "layer": "2",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop route",
+        "name:es": "Ruta circular",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4977894,
+            34.6887165
+          ],
+          [
+            135.4976046,
+            34.6904403
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 864484147,
+        "relation_role": "forward",
+        "relation_order": 17,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "5",
+        "layer": "2",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop route",
+        "name:es": "Ruta circular",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4979849,
+            34.6852594
+          ],
+          [
+            135.4979738,
+            34.6862162
+          ],
+          [
+            135.4979572,
+            34.6868153
+          ],
+          [
+            135.4977894,
+            34.6887165
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 148654342,
+        "relation_role": "forward",
+        "relation_order": 18,
+        "mainline": true,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway",
+        "lanes": "4",
+        "layer": "3",
+        "maxspeed": "60",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Loop route",
+        "name:es": "Ruta circular",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "source": "Bing 2010",
+        "surface": "asphalt",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4971717,
+            34.6707566
+          ],
+          [
+            135.4972212,
+            34.6711674
+          ],
+          [
+            135.4974716,
+            34.6734892
+          ],
+          [
+            135.4975813,
+            34.6744971
+          ],
+          [
+            135.4976437,
+            34.675131
+          ],
+          [
+            135.4976899,
+            34.675751
+          ],
+          [
+            135.4977254,
+            34.6763154
+          ],
+          [
+            135.4978157,
+            34.6780344
+          ],
+          [
+            135.4978601,
+            34.6787672
+          ],
+          [
+            135.4979142,
+            34.6798916
+          ],
+          [
+            135.4979701,
+            34.6809359
+          ],
+          [
+            135.4980151,
+            34.6819065
+          ],
+          [
+            135.498023,
+            34.6822987
+          ],
+          [
+            135.4980244,
+            34.6826731
+          ],
+          [
+            135.4980159,
+            34.6832548
+          ],
+          [
+            135.4980093,
+            34.6838607
+          ],
+          [
+            135.4979914,
+            34.6851014
+          ],
+          [
+            135.4979849,
+            34.6852594
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 93688410,
+        "relation_role": "unspecified",
+        "relation_order": 19,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "layer": "3",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5109033,
+            34.6803245
+          ],
+          [
+            135.51091,
+            34.6801289
+          ],
+          [
+            135.5109141,
+            34.6798516
+          ],
+          [
+            135.5109113,
+            34.6795958
+          ],
+          [
+            135.5108963,
+            34.6793402
+          ],
+          [
+            135.5108481,
+            34.6786938
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 395631794,
+        "relation_role": "unspecified",
+        "relation_order": 20,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "layer": "2",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5128119,
+            34.6815203
+          ],
+          [
+            135.512121,
+            34.6815328
+          ],
+          [
+            135.5120021,
+            34.6815325
+          ],
+          [
+            135.5118926,
+            34.6815266
+          ],
+          [
+            135.511789,
+            34.6815157
+          ],
+          [
+            135.5116694,
+            34.6814937
+          ],
+          [
+            135.5115499,
+            34.6814592
+          ],
+          [
+            135.5114412,
+            34.6814202
+          ],
+          [
+            135.5113347,
+            34.6813685
+          ],
+          [
+            135.5112443,
+            34.6813091
+          ],
+          [
+            135.5111586,
+            34.6812381
+          ],
+          [
+            135.5110877,
+            34.6811605
+          ],
+          [
+            135.5110291,
+            34.6810758
+          ],
+          [
+            135.5109769,
+            34.6809823
+          ],
+          [
+            135.5109328,
+            34.6808513
+          ],
+          [
+            135.5109037,
+            34.6807041
+          ],
+          [
+            135.5108964,
+            34.680542
+          ],
+          [
+            135.5109033,
+            34.6803245
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 93688184,
+        "relation_role": "unspecified",
+        "relation_order": 21,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "layer": "4",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "Bing 2010",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5142717,
+            34.6815272
+          ],
+          [
+            135.5138496,
+            34.6815118
+          ],
+          [
+            135.5134687,
+            34.6815108
+          ],
+          [
+            135.5128119,
+            34.6815203
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 914187749,
+        "relation_role": "unspecified",
+        "relation_order": 22,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "layer": "3",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.498148,
+            34.6836406
+          ],
+          [
+            135.4981278,
+            34.6841925
+          ],
+          [
+            135.4979914,
+            34.6851014
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 396364325,
+        "relation_role": "unspecified",
+        "relation_order": 23,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "layer": "2",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4996377,
+            34.6818671
+          ],
+          [
+            135.4991295,
+            34.6818773
+          ],
+          [
+            135.4989946,
+            34.6818878
+          ],
+          [
+            135.4988787,
+            34.6819066
+          ],
+          [
+            135.4987589,
+            34.6819374
+          ],
+          [
+            135.4986592,
+            34.6819844
+          ],
+          [
+            135.4985672,
+            34.6820369
+          ],
+          [
+            135.4984751,
+            34.6820984
+          ],
+          [
+            135.4984113,
+            34.6821541
+          ],
+          [
+            135.498349,
+            34.6822284
+          ],
+          [
+            135.4982898,
+            34.6823108
+          ],
+          [
+            135.4982414,
+            34.6824107
+          ],
+          [
+            135.4982182,
+            34.6824673
+          ],
+          [
+            135.4981845,
+            34.6825888
+          ],
+          [
+            135.4981671,
+            34.6826831
+          ],
+          [
+            135.4981564,
+            34.6828054
+          ],
+          [
+            135.498148,
+            34.6836406
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 93688193,
+        "relation_role": "unspecified",
+        "relation_order": 24,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "layer": "4",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5009,
+            34.6818614
+          ],
+          [
+            135.4996377,
+            34.6818671
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 93688188,
+        "relation_role": "unspecified",
+        "relation_order": 25,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "layer": "3",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5107018,
+            34.6792957
+          ],
+          [
+            135.510765,
+            34.6786942
+          ],
+          [
+            135.5108639,
+            34.6776794
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 406638461,
+        "relation_role": "unspecified",
+        "relation_order": 26,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "layer": "5",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5087143,
+            34.6818878
+          ],
+          [
+            135.5092609,
+            34.6818833
+          ],
+          [
+            135.5093928,
+            34.6818798
+          ],
+          [
+            135.5094897,
+            34.6818747
+          ],
+          [
+            135.5095639,
+            34.681868
+          ],
+          [
+            135.5096533,
+            34.6818572
+          ],
+          [
+            135.5097551,
+            34.6818391
+          ],
+          [
+            135.5099118,
+            34.6817937
+          ],
+          [
+            135.5100504,
+            34.6817321
+          ],
+          [
+            135.5101943,
+            34.6816496
+          ],
+          [
+            135.5103019,
+            34.6815617
+          ],
+          [
+            135.5103888,
+            34.6814662
+          ],
+          [
+            135.510469,
+            34.6813586
+          ],
+          [
+            135.5105318,
+            34.6812495
+          ],
+          [
+            135.5105766,
+            34.6811302
+          ],
+          [
+            135.5106049,
+            34.6809935
+          ],
+          [
+            135.5106194,
+            34.6808483
+          ],
+          [
+            135.5106267,
+            34.6807025
+          ],
+          [
+            135.5107018,
+            34.6792957
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 93688195,
+        "relation_role": "unspecified",
+        "relation_order": 27,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "2",
+        "layer": "4",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "smoothness": "excellent",
+        "source": "NRPB of MLIT Japan",
+        "source:ja": "国土画像情報（オルソ化空中写真）国土交通省",
+        "surface": "paved",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5071856,
+            34.6818986
+          ],
+          [
+            135.5087143,
+            34.6818878
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 244644006,
+        "relation_role": "unspecified",
+        "relation_order": 28,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "layer": "2",
+        "lit": "yes",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "source": "Bing 2010",
+        "surface": "asphalt",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5005045,
+            34.6671938
+          ],
+          [
+            135.4992965,
+            34.6672172
+          ],
+          [
+            135.4991606,
+            34.6672208
+          ],
+          [
+            135.499024,
+            34.6672287
+          ],
+          [
+            135.4988876,
+            34.6672445
+          ],
+          [
+            135.4987431,
+            34.6672725
+          ],
+          [
+            135.4986107,
+            34.6673109
+          ],
+          [
+            135.4984581,
+            34.6673659
+          ],
+          [
+            135.4983265,
+            34.6674256
+          ],
+          [
+            135.4982137,
+            34.66749
+          ],
+          [
+            135.4981222,
+            34.6675516
+          ],
+          [
+            135.4980386,
+            34.6676212
+          ],
+          [
+            135.4979496,
+            34.667708
+          ],
+          [
+            135.4978669,
+            34.6677965
+          ],
+          [
+            135.4977886,
+            34.6678888
+          ],
+          [
+            135.4973778,
+            34.6683951
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 915504818,
+        "relation_role": "unspecified",
+        "relation_order": 29,
+        "mainline": false,
+        "bicycle": "no",
+        "bridge": "yes",
+        "foot": "no",
+        "highway": "motorway_link",
+        "lanes": "1",
+        "layer": "3",
+        "lit": "yes",
+        "motorcar": "designated",
+        "motorcycle": "designated",
+        "name": "阪神高速1号環状線",
+        "name:en": "Hanshin Expressway Route 1 Loop Route",
+        "name:ja": "阪神高速1号環状線",
+        "oneway": "yes",
+        "ref": "1",
+        "source": "Bing 2010",
+        "surface": "asphalt",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.5018472,
+            34.6671018
+          ],
+          [
+            135.5011747,
+            34.667157
+          ],
+          [
+            135.5008834,
+            34.6671813
+          ],
+          [
+            135.5005045,
+            34.6671938
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_way_id": 777213764,
+        "relation_role": "unspecified",
+        "relation_order": 30,
+        "mainline": false,
+        "bridge": "yes",
+        "highway": "motorway_link",
+        "layer": "3",
+        "oneway": "yes",
+        "surface": "asphalt",
+        "toll": "yes"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            135.4964652,
+            34.682147
+          ],
+          [
+            135.496698,
+            34.6821568
+          ],
+          [
+            135.4969178,
+            34.6821637
+          ],
+          [
+            135.4971613,
+            34.6821662
+          ],
+          [
+            135.497252,
+            34.6821692
+          ],
+          [
+            135.4973249,
+            34.6821736
+          ],
+          [
+            135.4973871,
+            34.6821807
+          ],
+          [
+            135.4974457,
+            34.6821944
+          ],
+          [
+            135.4974982,
+            34.6822122
+          ],
+          [
+            135.497552,
+            34.6822333
+          ],
+          [
+            135.4975984,
+            34.6822565
+          ],
+          [
+            135.4976516,
+            34.6822901
+          ],
+          [
+            135.4976985,
+            34.6823278
+          ],
+          [
+            135.4977456,
+            34.6823747
+          ],
+          [
+            135.4977853,
+            34.6824242
+          ],
+          [
+            135.4978186,
+            34.6824758
+          ],
+          [
+            135.4978472,
+            34.6825335
+          ],
+          [
+            135.4978746,
+            34.6825997
+          ],
+          [
+            135.4978926,
+            34.6826717
+          ],
+          [
+            135.4979071,
+            34.682749
+          ],
+          [
+            135.4979195,
+            34.682844
+          ],
+          [
+            135.4979322,
+            34.6830656
+          ],
+          [
+            135.4979456,
+            34.6832322
+          ],
+          [
+            135.4980093,
+            34.6838607
+          ]
+        ]
+      }
+    }
+  ]
+}
