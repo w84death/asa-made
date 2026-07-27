@@ -1,23 +1,23 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-const screen_width = 800;
+const screen_width = 640;
 const screen_height = 480;
 const road_y: f32 = 2.2;
-const track_rx: f32 = 92.0;
-const track_rz: f32 = 58.0;
+const track_half_x: f32 = 118.0;
+const track_half_z: f32 = 52.0;
+const corner_radius: f32 = 24.0;
 const road_half_width: f32 = 9.0;
-const segment_count = 112;
+const segment_count = 144;
 const tau: f32 = std.math.pi * 2.0;
 
 const Vec2 = struct { x: f32, z: f32 };
 
 const Car = struct {
-    position: Vec2 = .{ .x = track_rx, .z = 0.0 },
+    position: Vec2 = .{ .x = track_half_x, .z = 0.0 },
     yaw: f32 = 0.0,
     speed: f32 = 0.0,
     steer_visual: f32 = 0.0,
-    distance: f32 = 0.0,
 
     fn reset(self: *Car) void {
         self.* = .{};
@@ -43,18 +43,15 @@ const Car = struct {
 
         self.position.x += @sin(self.yaw) * self.speed * dt;
         self.position.z += @cos(self.yaw) * self.speed * dt;
-        self.distance += @abs(self.speed) * dt;
 
         // Keep the prototype readable: barriers push the car back toward the road instead of stopping it dead.
-        const t = std.math.atan2(self.position.z / track_rz, self.position.x / track_rx);
-        const center = trackPoint(t);
-        const normal = trackNormal(t);
-        const lateral = dot(.{ .x = self.position.x - center.x, .z = self.position.z - center.z }, normal);
+        const nearest = nearestTrack(self.position);
+        const lateral = dot(.{ .x = self.position.x - nearest.center.x, .z = self.position.z - nearest.center.z }, nearest.normal);
         const limit = road_half_width - 1.1;
         if (@abs(lateral) > limit) {
             const excess = lateral - std.math.clamp(lateral, -limit, limit);
-            self.position.x -= normal.x * excess;
-            self.position.z -= normal.z * excess;
+            self.position.x -= nearest.normal.x * excess;
+            self.position.z -= nearest.normal.z * excess;
             self.speed *= 0.78;
         }
     }
@@ -65,14 +62,76 @@ fn color(r: u8, g: u8, b: u8, a: u8) rl.Color {
 }
 
 fn trackPoint(t: f32) Vec2 {
-    return .{ .x = track_rx * @cos(t), .z = track_rz * @sin(t) };
+    const long_straight = 2.0 * (track_half_x - corner_radius);
+    const short_straight = track_half_z - corner_radius;
+    const arc = std.math.pi * corner_radius * 0.5;
+    const perimeter = long_straight * 2.0 + short_straight * 2.0 + arc * 4.0;
+    var distance = @mod(t, tau) / tau * perimeter;
+
+    if (distance < short_straight) return .{ .x = track_half_x, .z = distance };
+    distance -= short_straight;
+    if (distance < arc) {
+        const angle = distance / corner_radius;
+        return .{ .x = track_half_x - corner_radius + corner_radius * @cos(angle), .z = track_half_z - corner_radius + corner_radius * @sin(angle) };
+    }
+    distance -= arc;
+    if (distance < long_straight) return .{ .x = track_half_x - corner_radius - distance, .z = track_half_z };
+    distance -= long_straight;
+    if (distance < arc) {
+        const angle = std.math.pi * 0.5 + distance / corner_radius;
+        return .{ .x = -track_half_x + corner_radius + corner_radius * @cos(angle), .z = track_half_z - corner_radius + corner_radius * @sin(angle) };
+    }
+    distance -= arc;
+    if (distance < short_straight * 2.0) return .{ .x = -track_half_x, .z = track_half_z - corner_radius - distance };
+    distance -= short_straight * 2.0;
+    if (distance < arc) {
+        const angle = std.math.pi + distance / corner_radius;
+        return .{ .x = -track_half_x + corner_radius + corner_radius * @cos(angle), .z = -track_half_z + corner_radius + corner_radius * @sin(angle) };
+    }
+    distance -= arc;
+    if (distance < long_straight) return .{ .x = -track_half_x + corner_radius + distance, .z = -track_half_z };
+    distance -= long_straight;
+    if (distance < arc) {
+        const angle = std.math.pi * 1.5 + distance / corner_radius;
+        return .{ .x = track_half_x - corner_radius + corner_radius * @cos(angle), .z = -track_half_z + corner_radius + corner_radius * @sin(angle) };
+    }
+    distance -= arc;
+    return .{ .x = track_half_x, .z = -track_half_z + corner_radius + distance };
 }
 
 fn trackNormal(t: f32) Vec2 {
-    const x = @cos(t) / track_rx;
-    const z = @sin(t) / track_rz;
-    const inv_len = 1.0 / @sqrt(x * x + z * z);
-    return .{ .x = x * inv_len, .z = z * inv_len };
+    const before = trackPoint(t - 0.001);
+    const after = trackPoint(t + 0.001);
+    const tx = after.x - before.x;
+    const tz = after.z - before.z;
+    const inv_len = 1.0 / @sqrt(tx * tx + tz * tz);
+    return .{ .x = tz * inv_len, .z = -tx * inv_len };
+}
+
+const NearestTrack = struct { center: Vec2, normal: Vec2 };
+
+fn nearestTrack(position: Vec2) NearestTrack {
+    var result = NearestTrack{ .center = trackPoint(0.0), .normal = trackNormal(0.0) };
+    var best_distance_sq: f32 = std.math.inf(f32);
+    var i: usize = 0;
+    while (i < segment_count) : (i += 1) {
+        const t0 = tau * @as(f32, @floatFromInt(i)) / segment_count;
+        const t1 = tau * @as(f32, @floatFromInt(i + 1)) / segment_count;
+        const a = trackPoint(t0);
+        const b = trackPoint(t1);
+        const edge = Vec2{ .x = b.x - a.x, .z = b.z - a.z };
+        const edge_length_sq = dot(edge, edge);
+        const along = std.math.clamp(dot(.{ .x = position.x - a.x, .z = position.z - a.z }, edge) / edge_length_sq, 0.0, 1.0);
+        const center = add(a, scale(edge, along));
+        const offset = Vec2{ .x = position.x - center.x, .z = position.z - center.z };
+        const distance_sq = dot(offset, offset);
+        if (distance_sq < best_distance_sq) {
+            best_distance_sq = distance_sq;
+            const inv_len = 1.0 / @sqrt(edge_length_sq);
+            result = .{ .center = center, .normal = .{ .x = edge.z * inv_len, .z = -edge.x * inv_len } };
+        }
+    }
+    return result;
 }
 
 fn add(a: Vec2, b: Vec2) Vec2 {
@@ -148,9 +207,8 @@ fn drawCity() void {
         while (gz <= 5) : (gz += 1) {
             const x: f32 = @as(f32, @floatFromInt(gx)) * 17.0;
             const z: f32 = @as(f32, @floatFromInt(gz)) * 17.0;
-            const t = std.math.atan2(z / track_rz, x / track_rx);
-            const center = trackPoint(t);
-            const d = @sqrt((x - center.x) * (x - center.x) + (z - center.z) * (z - center.z));
+            const nearest = nearestTrack(.{ .x = x, .z = z });
+            const d = @sqrt((x - nearest.center.x) * (x - nearest.center.x) + (z - nearest.center.z) * (z - nearest.center.z));
             if (d < road_half_width + 7.0) continue;
 
             const hsh = hash2(gx, gz);
@@ -231,39 +289,38 @@ fn drawTraffic(elapsed: f32) void {
         const n = trackNormal(t);
         const lane: f32 = if (i % 2 == 0) -4.6 else 1.5;
         const pos = add(p, scale(n, lane));
-        const tangent = Vec2{ .x = -track_rx * @sin(t), .z = track_rz * @cos(t) };
+        const before = trackPoint(t - 0.001);
+        const after = trackPoint(t + 0.001);
+        const tangent = Vec2{ .x = after.x - before.x, .z = after.z - before.z };
         drawCar(pos, std.math.atan2(tangent.x, tangent.z), paints[i % paints.len], false);
     }
 }
 
 fn drawHud(car: Car) void {
-    rl.drawRectangleGradientV(0, 0, screen_width, 88, color(4, 8, 15, 185), color(4, 8, 15, 0));
+    const width = rl.getScreenWidth();
+    const height = rl.getScreenHeight();
+    const speed_x = width - 82;
+    const speed_y = height - 94;
+
+    rl.drawRectangleGradientV(0, 0, width, 88, color(4, 8, 15, 185), color(4, 8, 15, 0));
     rl.drawText("KANJO NIGHT", 28, 22, 24, color(224, 237, 239, 255));
     rl.drawText("WANGAN LOOP // 01:17 AM", 29, 50, 12, color(66, 201, 219, 255));
+    rl.drawFPS(width - 92, 18);
 
-    rl.drawCircleGradient(.{ .x = 690, .y = 382 }, 78, color(10, 14, 23, 210), color(10, 14, 23, 35));
-    rl.drawCircleLines(690, 382, 61, color(89, 109, 121, 220));
+    rl.drawCircleGradient(.{ .x = @floatFromInt(speed_x), .y = @floatFromInt(speed_y) }, 76, color(10, 14, 23, 210), color(10, 14, 23, 35));
+    rl.drawCircleLines(speed_x, speed_y, 59, color(89, 109, 121, 220));
     const kmh: i32 = @intFromFloat(@abs(car.speed) * 3.6);
     var speed_buf: [16]u8 = undefined;
     const speed_text = std.fmt.bufPrintZ(&speed_buf, "{d:0>3}", .{kmh}) catch "---";
-    rl.drawText(speed_text, 651, 358, 38, color(239, 245, 241, 255));
-    rl.drawText("KM/H", 672, 400, 13, color(74, 210, 224, 255));
-    rl.drawText(if (car.speed < -0.5) "R" else "5", 710, 407, 22, color(245, 67, 104, 255));
+    rl.drawText(speed_text, speed_x - 39, speed_y - 24, 38, color(239, 245, 241, 255));
+    rl.drawText("KM/H", speed_x - 18, speed_y + 18, 13, color(74, 210, 224, 255));
+    rl.drawText(if (car.speed < -0.5) "R" else "5", speed_x + 20, speed_y + 25, 22, color(245, 67, 104, 255));
 
-    rl.drawRectangle(27, 423, 205, 5, color(29, 40, 51, 230));
+    rl.drawRectangle(27, height - 57, 205, 5, color(29, 40, 51, 230));
     const boost_width: i32 = @intFromFloat(205.0 * std.math.clamp(@abs(car.speed) / 84.0, 0.0, 1.0));
-    rl.drawRectangle(27, 423, boost_width, 5, color(31, 190, 217, 255));
-    rl.drawText("SPEED BREAKER", 27, 435, 12, color(155, 174, 181, 255));
-    rl.drawText("WASD / ARROWS  DRIVE     SPACE  HANDBRAKE     R  RESET", 27, 459, 11, color(122, 139, 148, 255));
-
-    if (@abs(car.speed) > 48.0) {
-        var i: i32 = 0;
-        while (i < 12) : (i += 1) {
-            const y = 95 + @mod(i * 43, 330);
-            const x = @mod(i * 83 + @as(i32, @intFromFloat(car.distance)), 900);
-            rl.drawLine(x, y, x + 24, y + 3, color(126, 210, 224, 80));
-        }
-    }
+    rl.drawRectangle(27, height - 57, boost_width, 5, color(31, 190, 217, 255));
+    rl.drawText("SPEED BREAKER", 27, height - 45, 12, color(155, 174, 181, 255));
+    rl.drawText("WASD/ARROWS DRIVE  SPACE HANDBRAKE  R RESET", 27, height - 21, 11, color(122, 139, 148, 255));
 }
 
 pub fn main() !void {
