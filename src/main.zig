@@ -164,8 +164,8 @@ const ForceFeedback = struct {
 var g_ff: ForceFeedback = .{};
 
 // === Config ===
-const screen_width = 720;
-const screen_height = 360;
+const screen_width = 1280;
+const screen_height = 720;
 const road_y: f32 = 6.0;
 const road_half_width: f32 = 6.0;
 const spline_spacing: f32 = 3.0;
@@ -1011,6 +1011,8 @@ fn drawHud(car: Car) void {
     if (g_wheel.available) {
         rl.drawText("DFP CONNECTED", width - 120, height - 21, 11, color(31, 190, 217, 255));
     }
+
+    drawMinimap(car);
 }
 
 fn drawDebugWheel() void {
@@ -1170,6 +1172,74 @@ const maps = [_]MapEntry{
 
 var g_map_loaded = false;
 
+// === Minimap ===
+var g_mm_scale: f32 = 1.0;
+var g_mm_cx: f32 = 0;
+var g_mm_cz: f32 = 0;
+
+fn buildMinimap() void {
+    var min_x: f32 = std.math.inf(f32);
+    var max_x: f32 = -std.math.inf(f32);
+    var min_z: f32 = std.math.inf(f32);
+    var max_z: f32 = -std.math.inf(f32);
+    for (g_collision) |sp| {
+        if (sp.pos.x < min_x) min_x = sp.pos.x;
+        if (sp.pos.x > max_x) max_x = sp.pos.x;
+        if (sp.pos.z < min_z) min_z = sp.pos.z;
+        if (sp.pos.z > max_z) max_z = sp.pos.z;
+    }
+    g_mm_cx = (min_x + max_x) * 0.5;
+    g_mm_cz = (min_z + max_z) * 0.5;
+    const span = @max(max_x - min_x, max_z - min_z);
+    g_mm_scale = 102.0 / span;
+}
+
+fn worldToMinimap(wx: f32, wz: f32, mx: i32, my: i32, half: f32) rl.Vector2 {
+    return .{
+        .x = @as(f32, @floatFromInt(mx)) + (wx - g_mm_cx) * g_mm_scale + half,
+        .y = @as(f32, @floatFromInt(my)) + (wz - g_mm_cz) * g_mm_scale + half,
+    };
+}
+
+fn drawMinimap(car: Car) void {
+    const mm_size: i32 = 110;
+    const mx = rl.getScreenWidth() - mm_size - 8;
+    const my: i32 = 32;
+    const half: f32 = @as(f32, @floatFromInt(mm_size)) * 0.5;
+
+    // Background
+    rl.drawRectangle(mx, my, mm_size, mm_size, color(6, 8, 14, 200));
+    rl.drawRectangleLines(mx, my, mm_size, mm_size, color(40, 50, 60, 255));
+
+    // Track outline
+    const n = g_collision.len;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const p0 = worldToMinimap(g_collision[i].pos.x, g_collision[i].pos.z, mx, my, half);
+        const p1 = worldToMinimap(g_collision[(i + 1) % n].pos.x, g_collision[(i + 1) % n].pos.z, mx, my, half);
+        rl.drawLineV(p0, p1, color(50, 110, 130, 200));
+    }
+
+    // Traffic dots
+    var t: usize = 0;
+    while (t < 12) : (t += 1) {
+        const fi: f32 = @floatFromInt(t);
+        const d = @mod(fi * (g_length / 12.0), g_length);
+        const sp = sampleSpline(g_spline, d);
+        const tp = worldToMinimap(sp.pos.x, sp.pos.z, mx, my, half);
+        rl.drawPixelV(tp, color(180, 180, 60, 200));
+    }
+
+    // Car
+    const cp = worldToMinimap(car.position.x, car.position.z, mx, my, half);
+    const heading = rl.Vector2{
+        .x = cp.x + @sin(car.yaw) * 5.0,
+        .y = cp.y + @cos(car.yaw) * 5.0,
+    };
+    rl.drawCircleV(cp, 3, color(255, 70, 70, 255));
+    rl.drawLineV(cp, heading, color(255, 120, 120, 255));
+}
+
 fn startMap(map_idx: usize) !void {
     drawLoading("LOADING MAP DATA");
     try loadWorld(maps[map_idx].json);
@@ -1183,6 +1253,7 @@ fn startMap(map_idx: usize) !void {
     drawLoading("BAKING LIGHTS");
     try bakeLightPoolMesh();
 
+    buildMinimap();
     g_map_loaded = true;
 }
 
