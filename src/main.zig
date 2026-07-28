@@ -173,6 +173,8 @@ const spline_spacing: f32 = 3.0;
 const collision_spacing: f32 = 12.0;
 const building_cull_dist: f32 = 65.0;
 const lamp_interval: f32 = 50.0;
+const civic_top_speed: f32 = 56.0;
+const civic_reverse_speed: f32 = 12.0;
 const tau: f32 = std.math.pi * 2.0;
 
 // === Shaders ===
@@ -434,6 +436,11 @@ fn localPoint(center: Vec2, yaw: f32, right: f32, fwd: f32) Vec2 {
         .x = center.x + @cos(yaw) * right + @sin(yaw) * fwd,
         .z = center.z - @sin(yaw) * right + @cos(yaw) * fwd,
     };
+}
+
+fn drivingFov(speed: f32) f32 {
+    const speed_ratio = std.math.clamp(@abs(speed) / civic_top_speed, 0.0, 1.0);
+    return 68.0 + std.math.pow(f32, speed_ratio, 1.35) * 11.0;
 }
 
 // === Spline ===
@@ -996,11 +1003,12 @@ const Car = struct {
         var lat_speed = dot(self.velocity, right);
 
         if (throttle > 0.0) {
-            const power_falloff = 1.0 - 0.42 * std.math.clamp(@abs(long_speed) / 84.0, 0.0, 1.0);
-            self.velocity = add(self.velocity, scale(forward, 44.0 * power_falloff * dt));
+            const speed_ratio = std.math.clamp(@abs(long_speed) / civic_top_speed, 0.0, 1.0);
+            const power_falloff = 1.0 - std.math.pow(f32, speed_ratio, 2.2);
+            self.velocity = add(self.velocity, scale(forward, 4.0 * power_falloff * dt));
         }
         if (brake > 0.0) {
-            const force: f32 = if (long_speed > 1.0) -62.0 else -24.0;
+            const force: f32 = if (long_speed > 1.0) -11.5 else if (long_speed > -civic_reverse_speed) -4.0 else 0.0;
             self.velocity = add(self.velocity, scale(forward, force * dt));
         }
 
@@ -1022,10 +1030,10 @@ const Car = struct {
         if (!handbrake and throttle > 0.0 and @abs(lat_speed) > 4.5 and @abs(long_speed) > 24.0) grip = 2.7;
         self.velocity = add(self.velocity, scale(right, -lat_speed * std.math.clamp(grip * dt, 0.0, 1.0)));
 
-        const drag: f32 = if (handbrake) 0.52 else 0.105;
+        const drag: f32 = if (handbrake) 0.52 else 0.0035;
         self.velocity = scale(self.velocity, std.math.clamp(1.0 - drag * dt, 0.0, 1.0));
         const vl = vecLength(self.velocity);
-        if (vl > 84.0) self.velocity = scale(self.velocity, 84.0 / vl);
+        if (vl > civic_top_speed) self.velocity = scale(self.velocity, civic_top_speed / vl);
 
         self.position = add(self.position, scale(self.velocity, dt));
         self.speed = dot(self.velocity, forward);
@@ -1103,7 +1111,7 @@ const CameraRig = struct {
                 .z = self.anchor.z + cf.z * 5.5,
             },
             .up = .{ .x = 0, .y = 1, .z = 0 },
-            .fovy = 67.0 + std.math.clamp(@abs(car.speed) * 0.11, 0.0, 7.0),
+            .fovy = drivingFov(car.speed),
             .projection = .perspective,
         };
     }
@@ -1118,7 +1126,7 @@ const PlayerModel = struct {
     light_boost_loc: i32,
 
     fn init() !PlayerModel {
-        var model = try rl.loadModel("assets/civic-raylib.glb");
+        var model = try rl.loadModel("assets/cars/civic-raylib.glb");
         errdefer model.unload();
         const shader = try rl.loadShaderFromMemory(car_vs, car_fs);
         errdefer shader.unload();
@@ -1382,7 +1390,7 @@ fn drawHud(car: Car) void {
     }
 
     rl.drawRectangle(27, height - 57, 205, 5, color(29, 40, 51, 230));
-    const bw: i32 = @intFromFloat(205.0 * std.math.clamp(@abs(car.speed) / 84.0, 0.0, 1.0));
+    const bw: i32 = @intFromFloat(205.0 * std.math.clamp(@abs(car.speed) / civic_top_speed, 0.0, 1.0));
     rl.drawRectangle(27, height - 57, bw, 5, color(205, 126, 48, 255));
     rl.drawText("SPEED BREAKER", 27, height - 45, 12, color(155, 174, 181, 255));
     rl.drawText("WASD/WHEEL DRIVE  SPACE HANDBRAKE  R RESET", 27, height - 21, 11, color(122, 139, 148, 255));
@@ -1541,7 +1549,7 @@ const MapEntry = struct {
     json: []const u8,
 };
 
-const osaka_json = @embedFile("loop_scene.json");
+const osaka_json = embedded_assets.osaka_json;
 const poznan_json = embedded_assets.poznan_json;
 
 const maps = [_]MapEntry{
@@ -1558,13 +1566,13 @@ const SongEntry = struct {
 };
 
 const song_entries = [_]SongEntry{
-    .{ .path = "assets/Pole Position Pulse.mp3", .name = "Pole Position Pulse" },
-    .{ .path = "assets/Rally House.mp3", .name = "Rally House" },
-    .{ .path = "assets/Midnight Rally.mp3", .name = "Midnight Rally" },
-    .{ .path = "assets/Osaka Loop.mp3", .name = "Osaka Loop" },
-    .{ .path = "assets/Osaka Loop 2.mp3", .name = "Osaka Loop 2" },
-    .{ .path = "assets/Poznań Afterglow.mp3", .name = "Poznan Afterglow" },
-    .{ .path = "assets/Poznań Afterglow 2.mp3", .name = "Poznan Afterglow 2" },
+    .{ .path = "assets/music/Pole Position Pulse.mp3", .name = "Pole Position Pulse" },
+    .{ .path = "assets/music/Rally House.mp3", .name = "Rally House" },
+    .{ .path = "assets/music/Midnight Rally.mp3", .name = "Midnight Rally" },
+    .{ .path = "assets/music/Osaka Loop.mp3", .name = "Osaka Loop" },
+    .{ .path = "assets/music/Osaka Loop 2.mp3", .name = "Osaka Loop 2" },
+    .{ .path = "assets/music/Poznań Afterglow.mp3", .name = "Poznan Afterglow" },
+    .{ .path = "assets/music/Poznań Afterglow 2.mp3", .name = "Poznan Afterglow 2" },
 };
 
 const MAX_SONGS = song_entries.len;
@@ -1859,7 +1867,7 @@ pub fn main() !void {
     defer g_scene_target.unload();
     g_post_shader = try rl.loadShaderFromMemory(null, post_fs);
     defer g_post_shader.unload();
-    g_ground_texture = try rl.loadTexture("assets/city-ground.png");
+    g_ground_texture = try rl.loadTexture("assets/tex/city-ground.png");
     defer rl.unloadTexture(g_ground_texture);
     rl.genTextureMipmaps(&g_ground_texture);
     rl.setTextureWrap(g_ground_texture, .repeat);
@@ -1873,7 +1881,7 @@ pub fn main() !void {
     defer g_ground_mat.unload();
     g_ground_mat.shader = g_ground_shader;
     g_ground_mat.maps[0].texture = g_ground_texture;
-    g_tarmac_texture = try rl.loadTexture("assets/tarmac.png");
+    g_tarmac_texture = try rl.loadTexture("assets/tex/tarmac.png");
     defer rl.unloadTexture(g_tarmac_texture);
     rl.genTextureMipmaps(&g_tarmac_texture);
     rl.setTextureWrap(g_tarmac_texture, .repeat);
@@ -1881,7 +1889,7 @@ pub fn main() !void {
     g_road_shader = try rl.loadShaderFromMemory(road_vs, road_fs);
     defer g_road_shader.unload();
     g_road_view_position_loc = rl.getShaderLocation(g_road_shader, "viewPosition");
-    g_barrier_texture = try rl.loadTexture("assets/barrier.png");
+    g_barrier_texture = try rl.loadTexture("assets/tex/barrier.png");
     defer rl.unloadTexture(g_barrier_texture);
     rl.genTextureMipmaps(&g_barrier_texture);
     rl.setTextureWrap(g_barrier_texture, .repeat);
@@ -1889,8 +1897,8 @@ pub fn main() !void {
     g_barrier_shader = try rl.loadShaderFromMemory(road_vs, barrier_fs);
     defer g_barrier_shader.unload();
     g_barrier_view_position_loc = rl.getShaderLocation(g_barrier_shader, "viewPosition");
-    g_facade_textures[0] = try rl.loadTexture("assets/front1.png");
-    g_facade_textures[1] = try rl.loadTexture("assets/front4.png");
+    g_facade_textures[0] = try rl.loadTexture("assets/tex/front1.png");
+    g_facade_textures[1] = try rl.loadTexture("assets/tex/front4.png");
     defer for (g_facade_textures) |texture| rl.unloadTexture(texture);
     for (&g_facade_textures) |*texture| {
         rl.genTextureMipmaps(texture);
@@ -1900,7 +1908,7 @@ pub fn main() !void {
     g_facade_shader = try rl.loadShaderFromMemory(road_vs, facade_fs);
     defer g_facade_shader.unload();
     g_facade_view_position_loc = rl.getShaderLocation(g_facade_shader, "viewPosition");
-    g_roof_texture = try rl.loadTexture("assets/roof.png");
+    g_roof_texture = try rl.loadTexture("assets/tex/roof.png");
     defer rl.unloadTexture(g_roof_texture);
     rl.genTextureMipmaps(&g_roof_texture);
     rl.setTextureWrap(g_roof_texture, .repeat);
@@ -1922,7 +1930,7 @@ pub fn main() !void {
     rl.initAudioDevice();
     defer rl.closeAudioDevice();
     g_audio_ready = true;
-    g_menu_music = rl.loadMusicStream("assets/Pole Position Pulse.mp3") catch null;
+    g_menu_music = rl.loadMusicStream("assets/music/Pole Position Pulse.mp3") catch null;
     defer if (g_menu_music) |m| rl.unloadMusicStream(m);
     startMenuMusic();
     defer stopMenuMusic();
@@ -2032,7 +2040,7 @@ pub fn main() !void {
                                 .z = car.position.z + fwd.z * 20.0,
                             },
                             .up = .{ .x = 0, .y = 1, .z = 0 },
-                            .fovy = 67.0 + std.math.clamp(@abs(car.speed) * 0.11, 0.0, 10.0),
+                            .fovy = drivingFov(car.speed),
                             .projection = .perspective,
                         };
                     },
