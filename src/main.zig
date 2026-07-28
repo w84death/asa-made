@@ -1507,33 +1507,47 @@ const maps = [_]MapEntry{
 var g_map_loaded = false;
 
 // === Audio ===
-const MAX_SONGS = 4;
-var g_songs: [MAX_SONGS]?rl.Music = .{ null, null, null, null };
+const SongEntry = struct {
+    path: [:0]const u8,
+    name: [:0]const u8,
+};
+
+const song_entries = [_]SongEntry{
+    .{ .path = "assets/Pole Position Pulse.mp3", .name = "Pole Position Pulse" },
+    .{ .path = "assets/Rally House.mp3", .name = "Rally House" },
+    .{ .path = "assets/Midnight Rally.mp3", .name = "Midnight Rally" },
+    .{ .path = "assets/Osaka Loop.mp3", .name = "Osaka Loop" },
+    .{ .path = "assets/Osaka Loop 2.mp3", .name = "Osaka Loop 2" },
+    .{ .path = "assets/Poznań Afterglow.mp3", .name = "Poznan Afterglow" },
+    .{ .path = "assets/Poznań Afterglow 2.mp3", .name = "Poznan Afterglow 2" },
+};
+
+const MAX_SONGS = song_entries.len;
+var g_songs: [MAX_SONGS]?rl.Music = .{null} ** MAX_SONGS;
 var g_song_count: usize = 0;
 var g_current_song: i32 = -1;
+var g_radio_paused = false;
 var g_audio_ready = false;
 var g_menu_music: ?rl.Music = null;
 var g_menu_music_playing = false;
 
-fn loadMapMusic(map_idx: usize) void {
-    // Unload previous map songs
+fn loadRadioPlaylist() void {
     if (g_audio_ready) {
         for (g_songs[0..g_song_count]) |s| {
-            if (s) |song| rl.stopMusicStream(song);
+            if (s) |song| {
+                rl.stopMusicStream(song);
+                rl.unloadMusicStream(song);
+            }
         }
     }
+    g_songs = .{null} ** MAX_SONGS;
     g_song_count = 0;
     g_current_song = -1;
+    g_radio_paused = false;
 
-    const song_sets = [_]struct { files: [2][:0]const u8 }{
-        .{ .files = .{ "assets/Osaka Loop.mp3", "assets/Osaka Loop 2.mp3" } },
-        .{ .files = .{ "assets/Poznań Afterglow.mp3", "assets/Poznań Afterglow 2.mp3" } },
-    };
-
-    if (map_idx >= song_sets.len) return;
-    for (song_sets[map_idx].files) |path| {
+    for (song_entries) |entry| {
         if (g_song_count >= MAX_SONGS) break;
-        g_songs[g_song_count] = rl.loadMusicStream(path) catch null;
+        g_songs[g_song_count] = rl.loadMusicStream(entry.path) catch null;
         if (g_songs[g_song_count] != null) g_song_count += 1;
     }
 }
@@ -1545,10 +1559,22 @@ fn playNextSong() void {
         rl.stopMusicStream(cur);
     }
     g_current_song = @intCast(@mod(g_current_song + 1, @as(i32, @intCast(g_song_count))));
+    g_radio_paused = false;
     if (g_songs[@intCast(g_current_song)]) |song| {
         rl.setMusicVolume(song, 0.5);
         rl.playMusicStream(song);
     }
+}
+
+fn toggleRadioPause() void {
+    if (!g_audio_ready or g_current_song < 0) return;
+    const song = g_songs[@intCast(g_current_song)] orelse return;
+    if (g_radio_paused) {
+        rl.resumeMusicStream(song);
+    } else {
+        rl.pauseMusicStream(song);
+    }
+    g_radio_paused = !g_radio_paused;
 }
 
 fn updateMusic() void {
@@ -1563,6 +1589,7 @@ fn updateMusic() void {
     if (g_current_song < 0) return;
     const song = g_songs[@intCast(g_current_song)] orelse return;
     rl.updateMusicStream(song);
+    if (g_radio_paused) return;
     if (!rl.isMusicStreamPlaying(song)) playNextSong();
 }
 
@@ -1572,6 +1599,7 @@ fn stopMusic() void {
         if (g_songs[@intCast(g_current_song)]) |song| rl.stopMusicStream(song);
         g_current_song = -1;
     }
+    g_radio_paused = false;
 }
 
 fn unloadMusic() void {
@@ -1594,6 +1622,70 @@ fn stopMenuMusic() void {
     if (!g_audio_ready or g_menu_music == null) return;
     rl.stopMusicStream(g_menu_music.?);
     g_menu_music_playing = false;
+}
+
+const RadioLayout = struct {
+    panel: rl.Rectangle,
+    pause_button: rl.Rectangle,
+    next_button: rl.Rectangle,
+};
+
+fn radioLayout() RadioLayout {
+    const panel_width: f32 = 420;
+    const panel_x = (@as(f32, @floatFromInt(rl.getScreenWidth())) - panel_width) * 0.5;
+    return .{
+        .panel = .{ .x = panel_x, .y = 12, .width = panel_width, .height = 58 },
+        .pause_button = .{ .x = panel_x + panel_width - 88, .y = 22, .width = 34, .height = 32 },
+        .next_button = .{ .x = panel_x + panel_width - 46, .y = 22, .width = 34, .height = 32 },
+    };
+}
+
+fn updateRadioControls() void {
+    if (rl.isKeyPressed(.n)) playNextSong();
+    if (rl.isKeyPressed(.m)) toggleRadioPause();
+    if (!rl.isMouseButtonPressed(.left)) return;
+
+    const mouse = rl.getMousePosition();
+    const layout = radioLayout();
+    if (rl.checkCollisionPointRec(mouse, layout.pause_button)) {
+        toggleRadioPause();
+    } else if (rl.checkCollisionPointRec(mouse, layout.next_button)) {
+        playNextSong();
+    }
+}
+
+fn drawRadio() void {
+    if (g_current_song < 0 or g_song_count == 0) return;
+    const layout = radioLayout();
+    const mouse = rl.getMousePosition();
+    const pause_hovered = rl.checkCollisionPointRec(mouse, layout.pause_button);
+    const next_hovered = rl.checkCollisionPointRec(mouse, layout.next_button);
+    const px: i32 = @intFromFloat(layout.panel.x);
+    const py: i32 = @intFromFloat(layout.panel.y);
+    const pw: i32 = @intFromFloat(layout.panel.width);
+    const pause_x: i32 = @intFromFloat(layout.pause_button.x);
+    const pause_y: i32 = @intFromFloat(layout.pause_button.y);
+    const next_x: i32 = @intFromFloat(layout.next_button.x);
+    const next_y: i32 = @intFromFloat(layout.next_button.y);
+
+    rl.drawRectangle(px, py, pw, @intFromFloat(layout.panel.height), color(7, 10, 10, 220));
+    rl.drawRectangleLines(px, py, pw, @intFromFloat(layout.panel.height), color(107, 83, 61, 190));
+    rl.drawText("NIGHT RADIO", px + 12, py + 7, 10, color(205, 126, 48, 255));
+    const entry_index: usize = @intCast(g_current_song);
+    rl.drawText(song_entries[entry_index].name, px + 12, py + 23, 15, color(226, 224, 207, 255));
+
+    const pause_color = if (pause_hovered) color(150, 47, 40, 255) else color(63, 31, 30, 245);
+    const next_color = if (next_hovered) color(150, 47, 40, 255) else color(63, 31, 30, 245);
+    rl.drawRectangle(pause_x, pause_y, @intFromFloat(layout.pause_button.width), @intFromFloat(layout.pause_button.height), pause_color);
+    rl.drawRectangle(next_x, next_y, @intFromFloat(layout.next_button.width), @intFromFloat(layout.next_button.height), next_color);
+    rl.drawText(if (g_radio_paused) ">" else "II", pause_x + 10, pause_y + 8, 14, color(239, 226, 207, 255));
+    rl.drawText(">>", next_x + 7, next_y + 8, 14, color(239, 226, 207, 255));
+
+    const song = g_songs[entry_index] orelse return;
+    const duration = rl.getMusicTimeLength(song);
+    const progress = if (duration > 0.0) std.math.clamp(rl.getMusicTimePlayed(song) / duration, 0.0, 1.0) else 0.0;
+    rl.drawRectangle(px + 12, py + 48, pw - 112, 2, color(50, 48, 43, 220));
+    rl.drawRectangle(px + 12, py + 48, @intFromFloat(@as(f32, @floatFromInt(pw - 112)) * progress), 2, color(205, 126, 48, 255));
 }
 
 // === Minimap ===
@@ -1682,7 +1774,9 @@ fn startMap(map_idx: usize) !void {
     try bakeLightPoolMesh();
 
     buildMinimap();
-    loadMapMusic(map_idx);
+    stopMenuMusic();
+    loadRadioPlaylist();
+    playNextSong();
     g_map_loaded = true;
 }
 
@@ -1700,6 +1794,7 @@ fn endMap() void {
     g_pool_mat.unload();
     g_arena.deinit();
     g_map_loaded = false;
+    startMenuMusic();
 }
 
 // === Main ===
@@ -1850,6 +1945,7 @@ pub fn main() !void {
 
                 if (rl.isKeyPressed(.tab)) show_debug = !show_debug;
                 if (rl.isKeyPressed(.c)) cam_mode = if (cam_mode == 0) 1 else 0;
+                updateRadioControls();
                 if (rl.isKeyPressed(.r) or (g_wheel.available and g_wheel.buttons[2])) {
                     car.reset();
                     camera_rig.reset(car);
@@ -1906,6 +2002,7 @@ pub fn main() !void {
                 rl.drawRectangleGradientV(0, @divTrunc(screen_h, 2), rl.getScreenWidth(), @divTrunc(screen_h, 2), color(32, 22, 13, 0), color(32, 22, 13, 38));
 
                 drawHud(car);
+                drawRadio();
                 if (show_debug) drawDebugWheel();
             },
         }
