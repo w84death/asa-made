@@ -440,7 +440,7 @@ fn localPoint(center: Vec2, yaw: f32, right: f32, fwd: f32) Vec2 {
 
 fn drivingFov(speed: f32) f32 {
     const speed_ratio = std.math.clamp(@abs(speed) / civic_top_speed, 0.0, 1.0);
-    return 68.0 + std.math.pow(f32, speed_ratio, 1.35) * 11.0;
+    return 72.0 + std.math.pow(f32, speed_ratio, 1.35) * 20.0;
 }
 
 // === Spline ===
@@ -1171,6 +1171,96 @@ const PlayerModel = struct {
     }
 };
 
+const TrafficModel = struct {
+    model: rl.Model,
+    bounds: rl.BoundingBox,
+    scale: f32,
+    axis_rotation: f32,
+    length: f32,
+
+    fn init(path: [:0]const u8, desired_length: f32, shader: rl.Shader) !TrafficModel {
+        var model = try rl.loadModel(path);
+        errdefer model.unload();
+        var material_index: usize = 0;
+        while (material_index < @as(usize, @intCast(model.materialCount))) : (material_index += 1) {
+            model.materials[material_index].shader = shader;
+        }
+
+        const bounds = rl.getModelBoundingBox(model);
+        const x_span = bounds.max.x - bounds.min.x;
+        const z_span = bounds.max.z - bounds.min.z;
+        const model_length = @max(x_span, z_span);
+        return .{
+            .model = model,
+            .bounds = bounds,
+            .scale = desired_length / model_length,
+            .axis_rotation = if (x_span >= z_span) std.math.pi * 0.5 else 0.0,
+            .length = desired_length,
+        };
+    }
+
+    fn unload(self: TrafficModel) void {
+        self.model.unload();
+    }
+
+    fn draw(self: TrafficModel, position: Vec2, yaw: f32) void {
+        const angle = yaw + self.axis_rotation;
+        const cx = (self.bounds.min.x + self.bounds.max.x) * 0.5;
+        const cz = (self.bounds.min.z + self.bounds.max.z) * 0.5;
+        const rx = cx * @cos(angle) + cz * @sin(angle);
+        const rz = -cx * @sin(angle) + cz * @cos(angle);
+        self.model.drawEx(
+            .{
+                .x = position.x - rx * self.scale,
+                .y = road_y + 0.14 - self.bounds.min.y * self.scale,
+                .z = position.z - rz * self.scale,
+            },
+            .{ .x = 0, .y = 1, .z = 0 },
+            angle * 180.0 / std.math.pi,
+            .{ .x = self.scale, .y = self.scale, .z = self.scale },
+            color(255, 255, 255, 255),
+        );
+    }
+};
+
+const TrafficFleet = struct {
+    models: [9]?TrafficModel,
+    count: usize,
+
+    fn init(shader: rl.Shader) !TrafficFleet {
+        const entries = [_]struct { path: [:0]const u8, fallback: ?[:0]const u8 = null, length: f32 }{
+            .{ .path = "assets/cars/bus2.glb", .fallback = "assets/cars/bus.glb", .length = 9.0 },
+            .{ .path = "assets/cars/car1.glb", .length = 4.5 },
+            .{ .path = "assets/cars/car2.glb", .length = 4.5 },
+            .{ .path = "assets/cars/car3.glb", .length = 4.5 },
+            .{ .path = "assets/cars/car4.glb", .length = 4.5 },
+            .{ .path = "assets/cars/car5.glb", .length = 4.5 },
+            .{ .path = "assets/cars/minibus.glb", .fallback = "assets/cars/minibus2.glb", .length = 5.8 },
+            .{ .path = "assets/cars/wagon.glb", .fallback = "assets/cars/wagon2.glb", .length = 4.8 },
+            .{ .path = "assets/cars/wagon3.glb", .length = 4.8 },
+        };
+        var models: [entries.len]?TrafficModel = .{null} ** entries.len;
+        var loaded: usize = 0;
+        errdefer for (models[0..loaded]) |model| if (model) |value| value.unload();
+        for (entries) |entry| {
+            const model = TrafficModel.init(entry.path, entry.length, shader) catch blk: {
+                if (entry.fallback) |fallback| {
+                    break :blk TrafficModel.init(fallback, entry.length, shader) catch continue;
+                }
+                continue;
+            };
+            models[loaded] = model;
+            loaded += 1;
+        }
+        if (loaded == 0) return error.NoTrafficModels;
+        return .{ .models = models, .count = loaded };
+    }
+
+    fn unload(self: TrafficFleet) void {
+        for (self.models[0..self.count]) |model| if (model) |value| value.unload();
+    }
+};
+
 // === Drawing ===
 fn drawHeadlightWash(position: Vec2, yaw: f32) void {
     const nl = localPoint(position, yaw, -0.72, 2.0);
@@ -1211,61 +1301,6 @@ fn drawSkybox() void {
         color(113, 62, 26, 35),
         color(28, 27, 20, 0),
     );
-}
-
-fn boxOriented(center: Vec2, y: f32, w: f32, h: f32, l: f32, yaw: f32, tint: rl.Color) void {
-    const bl = localPoint(center, yaw, -w * 0.5, -l * 0.5);
-    const br = localPoint(center, yaw, w * 0.5, -l * 0.5);
-    const fl = localPoint(center, yaw, -w * 0.5, l * 0.5);
-    const fr = localPoint(center, yaw, w * 0.5, l * 0.5);
-    const y0 = y;
-    const y1 = y + h;
-    const dark = mixColor(tint, color(6, 5, 4, 255), 0.55);
-    const side = mixColor(tint, color(23, 20, 17, 255), 0.34);
-    const top = mixColor(tint, color(181, 132, 76, 255), 0.18);
-    const face = struct {
-        fn q(a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, col: rl.Color) void {
-            rl.gl.rlBegin(rl.gl.rl_triangles);
-            rl.gl.rlColor4ub(col.r, col.g, col.b, col.a);
-            rl.gl.rlVertex3f(a.x, a.y, a.z);
-            rl.gl.rlVertex3f(c.x, c.y, c.z);
-            rl.gl.rlVertex3f(b.x, b.y, b.z);
-            rl.gl.rlVertex3f(a.x, a.y, a.z);
-            rl.gl.rlVertex3f(d.x, d.y, d.z);
-            rl.gl.rlVertex3f(c.x, c.y, c.z);
-            rl.gl.rlEnd();
-        }
-    };
-    const bl0 = v3(bl, y0);
-    const br0 = v3(br, y0);
-    const fl0 = v3(fl, y0);
-    const fr0 = v3(fr, y0);
-    const bl1 = v3(bl, y1);
-    const br1 = v3(br, y1);
-    const fl1 = v3(fl, y1);
-    const fr1 = v3(fr, y1);
-    face.q(bl0, br0, br1, bl1, dark);
-    face.q(fr0, fl0, fl1, fr1, tint);
-    face.q(fl0, bl0, bl1, fl1, side);
-    face.q(br0, fr0, fr1, br1, side);
-    face.q(bl1, br1, fr1, fl1, top);
-}
-
-fn drawCar(position: Vec2, yaw: f32, paint: rl.Color) void {
-    drawHeadlightWash(position, yaw);
-    boxOriented(position, road_y + 0.18, 2.0, 0.62, 4.25, yaw, paint);
-    const cabin = localPoint(position, yaw, 0, -0.15);
-    boxOriented(cabin, road_y + 0.78, 1.62, 0.48, 2.05, yaw, mixColor(paint, color(18, 24, 25, 255), 0.72));
-    const nose = localPoint(position, yaw, 0, 2.1);
-    for ([_]f32{ -0.62, 0.62 }) |side| {
-        const lamp = localPoint(nose, yaw, side, 0);
-        rl.drawSphere(v3(lamp, road_y + 0.55), 0.13, color(255, 249, 222, 255));
-    }
-    const tail = localPoint(position, yaw, 0, -2.1);
-    for ([_]f32{ -0.68, 0.68 }) |side| {
-        const lamp = localPoint(tail, yaw, side, 0);
-        rl.drawSphere(v3(lamp, road_y + 0.5), 0.12, color(255, 61, 38, 255));
-    }
 }
 
 fn drawPlayerCar(pm: PlayerModel, position: Vec2, yaw: f32) void {
@@ -1345,11 +1380,21 @@ fn drawLamps(car_pos: Vec2) void {
     }
 }
 
-fn drawTraffic(elapsed: f32) void {
-    const paints = [_]rl.Color{
-        color(199, 195, 181, 255), color(27, 42, 90, 255),  color(119, 35, 29, 255),
-        color(34, 34, 31, 255),    color(137, 94, 42, 255), color(40, 67, 58, 255),
-    };
+fn drawTrafficLights(position: Vec2, yaw: f32, vehicle_length: f32) void {
+    drawHeadlightWash(position, yaw);
+    const nose = localPoint(position, yaw, 0, vehicle_length * 0.5);
+    for ([_]f32{ -0.62, 0.62 }) |side| {
+        const lamp = localPoint(nose, yaw, side, 0);
+        rl.drawSphere(v3(lamp, road_y + 0.55), 0.11, color(255, 241, 208, 255));
+    }
+    const tail = localPoint(position, yaw, 0, -vehicle_length * 0.5);
+    for ([_]f32{ -0.68, 0.68 }) |side| {
+        const lamp = localPoint(tail, yaw, side, 0);
+        rl.drawSphere(v3(lamp, road_y + 0.5), 0.11, color(255, 48, 31, 255));
+    }
+}
+
+fn drawTraffic(fleet: TrafficFleet, elapsed: f32) void {
     var i: usize = 0;
     while (i < 12) : (i += 1) {
         const fi: f32 = @floatFromInt(i);
@@ -1362,7 +1407,9 @@ fn drawTraffic(elapsed: f32) void {
         const pos = add(sp.pos, scale(sp.normal, lane));
         const reverse_yaw: f32 = if (reverse) std.math.pi else 0.0;
         const yaw = std.math.atan2(sp.tangent.x, sp.tangent.z) + reverse_yaw;
-        drawCar(pos, yaw, paints[i % paints.len]);
+        const vehicle = fleet.models[i % fleet.count].?;
+        vehicle.draw(pos, yaw);
+        drawTrafficLights(pos, yaw, vehicle.length);
     }
 }
 
@@ -1920,6 +1967,9 @@ pub fn main() !void {
     drawLoading("LOADING VEHICLE");
     const player_model = try PlayerModel.init();
     defer player_model.unload();
+    drawLoading("LOADING TRAFFIC");
+    const traffic_fleet = try TrafficFleet.init(player_model.shader);
+    defer traffic_fleet.unload();
 
     g_wheel = Wheel.init();
     defer g_wheel.deinit();
@@ -2065,7 +2115,8 @@ pub fn main() !void {
                 rl.drawMesh(g_road_mesh, g_road_mat, identity);
                 rl.drawMesh(g_barrier_mesh, g_barrier_mat, identity);
                 drawLamps(car.position);
-                drawTraffic(elapsed);
+                player_model.setLightBoost(1.0);
+                drawTraffic(traffic_fleet, elapsed);
                 drawPlayerCar(player_model, car.position, car.yaw);
                 camera.end();
 
