@@ -1,0 +1,28 @@
+{
+  "title": "Osaka Loop Route 3D reconstruction data",
+  "osm_relation_id": 6085197,
+  "wikidata_id": "Q11656965",
+  "corridor_m": 150,
+  "route_length_m": 10341.932,
+  "route_mainline_way_count": 18,
+  "route_relation_member_count": 31,
+  "building_feature_count": 7223,
+  "building_way_count": 7200,
+  "building_relation_count": 23,
+  "known_height_count": 937,
+  "origin": {
+    "longitude": 135.50396305,
+    "latitude": 34.67513155,
+    "altitude_m": 0
+  },
+  "source_snapshots": {
+    "route": "2026-07-27T22:41:19Z",
+    "route_way_tags": "2026-07-27T22:47:30Z",
+    "building_way_corridor": "2026-06-01T08:52:28Z",
+    "building_relations": "Current OSM API versions fetched 2026-07-27; relation IDs selected from corridor snapshot."
+  },
+  "license": {
+    "data": "OpenStreetMap data, ODbL 1.0",
+    "attribution": "© OpenStreetMap contributors"
+  }
+}
