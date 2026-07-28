@@ -29,7 +29,9 @@ pub fn build(b: *std.Build) void {
     const release_install = b.addInstallArtifact(release_exe, .{
         .dest_dir = .{ .override = .{ .custom = "../Release/linux-x86_64" } },
     });
-    release_step.dependOn(&release_install.step);
+    const release_upx = b.addSystemCommand(&.{ "upx", "--best", "--lzma", "Release/linux-x86_64/asa-made" });
+    release_upx.step.dependOn(&release_install.step);
+    release_step.dependOn(&release_upx.step);
 
     const install_assets_rel = b.addInstallDirectory(.{
         .source_dir = b.path("Release/assets"),
@@ -51,7 +53,9 @@ pub fn build(b: *std.Build) void {
         .dest_dir = .{ .override = .{ .custom = "../Release/windows-x86_64" } },
         .pdb_dir = .disabled,
     });
-    windows_step.dependOn(&windows_install.step);
+    const windows_upx = b.addSystemCommand(&.{ "upx", "--best", "--lzma", "Release/windows-x86_64/asa-made.exe" });
+    windows_upx.step.dependOn(&windows_install.step);
+    windows_step.dependOn(&windows_upx.step);
 
     const windows_assets = b.addInstallDirectory(.{
         .source_dir = b.path("Release/assets"),
