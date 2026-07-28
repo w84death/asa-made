@@ -294,6 +294,45 @@ const barrier_fs =
     \\}
 ;
 
+const facade_fs =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\in vec3 fragPosition;
+    \\uniform sampler2D texture0;
+    \\uniform vec4 colDiffuse;
+    \\uniform vec3 viewPosition;
+    \\out vec4 finalColor;
+    \\void main() {
+    \\    vec3 facade = texture(texture0, fragTexCoord).rgb;
+    \\    vec3 ambient = fragColor.rgb * 1.35 + vec3(0.11, 0.10, 0.085);
+    \\    vec3 surface = facade * ambient;
+    \\    float windowLight = smoothstep(0.56, 0.90, dot(facade, vec3(0.2126, 0.7152, 0.0722)));
+    \\    surface += windowLight * facade * vec3(0.16, 0.10, 0.045);
+    \\    float distanceFog = smoothstep(48.0, 235.0, distance(viewPosition.xz, fragPosition.xz));
+    \\    surface = mix(surface, vec3(0.075, 0.071, 0.057), distanceFog * 0.70);
+    \\    finalColor = vec4(surface, 1.0) * colDiffuse;
+    \\}
+;
+
+const roof_fs =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\in vec3 fragPosition;
+    \\uniform sampler2D texture0;
+    \\uniform vec4 colDiffuse;
+    \\uniform vec3 viewPosition;
+    \\out vec4 finalColor;
+    \\void main() {
+    \\    vec3 roofDetail = texture(texture0, fragTexCoord).rgb;
+    \\    vec3 surface = roofDetail * (fragColor.rgb * 1.25 + vec3(0.19, 0.18, 0.16));
+    \\    float distanceFog = smoothstep(48.0, 235.0, distance(viewPosition.xz, fragPosition.xz));
+    \\    surface = mix(surface, vec3(0.075, 0.071, 0.057), distanceFog * 0.70);
+    \\    finalColor = vec4(surface, 1.0) * colDiffuse;
+    \\}
+;
+
 const car_vs =
     \\#version 330
     \\in vec3 vertexPosition;
@@ -431,8 +470,10 @@ var g_road_mesh: rl.Mesh = undefined;
 var g_road_mat: rl.Material = undefined;
 var g_barrier_mesh: rl.Mesh = undefined;
 var g_barrier_mat: rl.Material = undefined;
-var g_bldg_mesh: rl.Mesh = undefined;
-var g_bldg_mat: rl.Material = undefined;
+var g_facade_meshes: [2]rl.Mesh = undefined;
+var g_facade_mats: [2]rl.Material = undefined;
+var g_roof_mesh: rl.Mesh = undefined;
+var g_roof_mat: rl.Material = undefined;
 var g_pool_mesh: rl.Mesh = undefined;
 var g_pool_mat: rl.Material = undefined;
 var g_view_position_loc: i32 = -1;
@@ -449,6 +490,12 @@ var g_road_view_position_loc: i32 = -1;
 var g_barrier_texture: rl.Texture2D = undefined;
 var g_barrier_shader: rl.Shader = undefined;
 var g_barrier_view_position_loc: i32 = -1;
+var g_facade_textures: [2]rl.Texture2D = undefined;
+var g_facade_shader: rl.Shader = undefined;
+var g_facade_view_position_loc: i32 = -1;
+var g_roof_texture: rl.Texture2D = undefined;
+var g_roof_shader: rl.Shader = undefined;
+var g_roof_view_position_loc: i32 = -1;
 
 fn beginFrame() void {
     rl.beginDrawing();
@@ -822,8 +869,10 @@ fn bakeBarrierMesh() !void {
 
 // === Building mesh baking ===
 fn bakeBuildingMesh() !void {
-    var mb = MeshBuilder.init(std.heap.c_allocator);
-    defer mb.deinit();
+    var wall_builders = [2]MeshBuilder{ MeshBuilder.init(std.heap.c_allocator), MeshBuilder.init(std.heap.c_allocator) };
+    defer for (&wall_builders) |*builder| builder.deinit();
+    var roof_builder = MeshBuilder.init(std.heap.c_allocator);
+    defer roof_builder.deinit();
 
     var b: usize = 0;
     while (b < g_buildings.len) : (b += 1) {
@@ -843,13 +892,18 @@ fn bakeBuildingMesh() !void {
         const wall_dark = mixColor(facade, color(15, 19, 19, 255), 0.35);
         const wall_top = mixColor(facade, color(152, 100, 55, 255), 0.18);
 
-        // Walls
+        // Vertical faces use one of two facade families; roofs remain untextured.
+        const facade_index = hsh % wall_builders.len;
+        const facade_aspect: f32 = if (facade_index == 0) 1.5 else 1.0;
+        const wall_builder = &wall_builders[facade_index];
         var j: usize = 0;
         while (j < pts.len) : (j += 1) {
             const pa = pts[j];
             const pb = pts[(j + 1) % pts.len];
-            try mb.tri(pa.x, 0, pa.z, pb.x, 0, pb.z, pb.x, h, pb.z, wall_dark, wall_dark, wall_top);
-            try mb.tri(pa.x, 0, pa.z, pb.x, h, pb.z, pa.x, h, pa.z, wall_dark, wall_top, wall_top);
+            const side_length = vecLength(.{ .x = pb.x - pa.x, .z = pb.z - pa.z });
+            const repeat_u = @max(1.0, side_length / @max(h * facade_aspect, 1.0));
+            try wall_builder.triUv(pa.x, 0, pa.z, 0, 1, pb.x, 0, pb.z, repeat_u, 1, pb.x, h, pb.z, repeat_u, 0, wall_dark, wall_dark, wall_top);
+            try wall_builder.triUv(pa.x, 0, pa.z, 0, 1, pb.x, h, pb.z, repeat_u, 0, pa.x, h, pa.z, 0, 0, wall_dark, wall_top, wall_top);
         }
 
         // Roof (simple fan from centroid)
@@ -866,13 +920,21 @@ fn bakeBuildingMesh() !void {
         while (j < pts.len) : (j += 1) {
             const pa = pts[j];
             const pb = pts[(j + 1) % pts.len];
-            try mb.tri(cx, h, cz, pa.x, h, pa.z, pb.x, h, pb.z, roof, roof, roof);
+            const texture_scale: f32 = 1.0 / 36.0;
+            try roof_builder.triUv(cx, h, cz, cx * texture_scale, cz * texture_scale, pa.x, h, pa.z, pa.x * texture_scale, pa.z * texture_scale, pb.x, h, pb.z, pb.x * texture_scale, pb.z * texture_scale, roof, roof, roof);
         }
     }
 
-    const built = try mb.build(g_flat_shader);
-    g_bldg_mesh = built.mesh;
-    g_bldg_mat = built.mat;
+    for (&wall_builders, 0..) |*builder, index| {
+        const built = try builder.build(g_facade_shader);
+        g_facade_meshes[index] = built.mesh;
+        g_facade_mats[index] = built.mat;
+        g_facade_mats[index].maps[0].texture = g_facade_textures[index];
+    }
+    const roof_built = try roof_builder.build(g_roof_shader);
+    g_roof_mesh = roof_built.mesh;
+    g_roof_mat = roof_built.mat;
+    g_roof_mat.maps[0].texture = g_roof_texture;
 }
 
 // === Light pool mesh baking ===
@@ -1788,8 +1850,12 @@ fn endMap() void {
     g_road_mat.unload();
     rl.unloadMesh(g_barrier_mesh);
     g_barrier_mat.unload();
-    rl.unloadMesh(g_bldg_mesh);
-    g_bldg_mat.unload();
+    for (g_facade_meshes, g_facade_mats) |mesh, material| {
+        rl.unloadMesh(mesh);
+        material.unload();
+    }
+    rl.unloadMesh(g_roof_mesh);
+    g_roof_mat.unload();
     rl.unloadMesh(g_pool_mesh);
     g_pool_mat.unload();
     g_arena.deinit();
@@ -1845,6 +1911,25 @@ pub fn main() !void {
     g_barrier_shader = try rl.loadShaderFromMemory(road_vs, barrier_fs);
     defer g_barrier_shader.unload();
     g_barrier_view_position_loc = rl.getShaderLocation(g_barrier_shader, "viewPosition");
+    g_facade_textures[0] = try rl.loadTexture("assets/front1.png");
+    g_facade_textures[1] = try rl.loadTexture("assets/front4.png");
+    defer for (g_facade_textures) |texture| rl.unloadTexture(texture);
+    for (&g_facade_textures) |*texture| {
+        rl.genTextureMipmaps(texture);
+        rl.setTextureWrap(texture.*, .repeat);
+        rl.setTextureFilter(texture.*, .trilinear);
+    }
+    g_facade_shader = try rl.loadShaderFromMemory(road_vs, facade_fs);
+    defer g_facade_shader.unload();
+    g_facade_view_position_loc = rl.getShaderLocation(g_facade_shader, "viewPosition");
+    g_roof_texture = try rl.loadTexture("assets/roof.png");
+    defer rl.unloadTexture(g_roof_texture);
+    rl.genTextureMipmaps(&g_roof_texture);
+    rl.setTextureWrap(g_roof_texture, .repeat);
+    rl.setTextureFilter(g_roof_texture, .trilinear);
+    g_roof_shader = try rl.loadShaderFromMemory(road_vs, roof_fs);
+    defer g_roof_shader.unload();
+    g_roof_view_position_loc = rl.getShaderLocation(g_roof_shader, "viewPosition");
 
     drawLoading("LOADING VEHICLE");
     const player_model = try PlayerModel.init();
@@ -1984,10 +2069,13 @@ pub fn main() !void {
                 rl.setShaderValue(g_ground_shader, g_ground_view_position_loc, &view_position, .vec3);
                 rl.setShaderValue(g_road_shader, g_road_view_position_loc, &view_position, .vec3);
                 rl.setShaderValue(g_barrier_shader, g_barrier_view_position_loc, &view_position, .vec3);
+                rl.setShaderValue(g_facade_shader, g_facade_view_position_loc, &view_position, .vec3);
+                rl.setShaderValue(g_roof_shader, g_roof_view_position_loc, &view_position, .vec3);
 
                 camera.begin();
                 rl.drawMesh(g_ground_mesh, g_ground_mat, identity);
-                rl.drawMesh(g_bldg_mesh, g_bldg_mat, identity);
+                rl.drawMesh(g_roof_mesh, g_roof_mat, identity);
+                for (g_facade_meshes, g_facade_mats) |mesh, material| rl.drawMesh(mesh, material, identity);
                 rl.drawMesh(g_road_mesh, g_road_mat, identity);
                 rl.drawMesh(g_barrier_mesh, g_barrier_mat, identity);
                 rl.beginBlendMode(.alpha);
