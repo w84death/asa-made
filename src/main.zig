@@ -1172,6 +1172,96 @@ const maps = [_]MapEntry{
 
 var g_map_loaded = false;
 
+// === Audio ===
+const MAX_SONGS = 4;
+var g_songs: [MAX_SONGS]?rl.Music = .{ null, null, null, null };
+var g_song_count: usize = 0;
+var g_current_song: i32 = -1;
+var g_audio_ready = false;
+var g_menu_music: ?rl.Music = null;
+var g_menu_music_playing = false;
+
+fn loadMapMusic(map_idx: usize) void {
+    // Unload previous map songs
+    if (g_audio_ready) {
+        for (g_songs[0..g_song_count]) |s| {
+            if (s) |song| rl.stopMusicStream(song);
+        }
+    }
+    g_song_count = 0;
+    g_current_song = -1;
+
+    const song_sets = [_]struct { files: [2][:0]const u8 }{
+        .{ .files = .{ "assets/Osaka Loop.mp3", "assets/Osaka Loop 2.mp3" } },
+        .{ .files = .{ "assets/Poznań Afterglow.mp3", "assets/Poznań Afterglow 2.mp3" } },
+    };
+
+    if (map_idx >= song_sets.len) return;
+    for (song_sets[map_idx].files) |path| {
+        if (g_song_count >= MAX_SONGS) break;
+        g_songs[g_song_count] = rl.loadMusicStream(path) catch null;
+        if (g_songs[g_song_count] != null) g_song_count += 1;
+    }
+}
+
+fn playNextSong() void {
+    if (!g_audio_ready or g_song_count == 0) return;
+    if (g_current_song >= 0) {
+        const cur = g_songs[@intCast(g_current_song)] orelse return;
+        rl.stopMusicStream(cur);
+    }
+    g_current_song = @intCast(@mod(g_current_song + 1, @as(i32, @intCast(g_song_count))));
+    if (g_songs[@intCast(g_current_song)]) |song| {
+        rl.setMusicVolume(song, 0.5);
+        rl.playMusicStream(song);
+    }
+}
+
+fn updateMusic() void {
+    if (!g_audio_ready) return;
+    if (g_menu_music_playing) {
+        if (g_menu_music) |m| {
+            rl.updateMusicStream(m);
+            if (!rl.isMusicStreamPlaying(m)) rl.playMusicStream(m);
+        }
+        return;
+    }
+    if (g_current_song < 0) return;
+    const song = g_songs[@intCast(g_current_song)] orelse return;
+    rl.updateMusicStream(song);
+    if (!rl.isMusicStreamPlaying(song)) playNextSong();
+}
+
+fn stopMusic() void {
+    if (!g_audio_ready) return;
+    if (g_current_song >= 0) {
+        if (g_songs[@intCast(g_current_song)]) |song| rl.stopMusicStream(song);
+        g_current_song = -1;
+    }
+}
+
+fn unloadMusic() void {
+    if (!g_audio_ready) return;
+    stopMusic();
+    for (g_songs[0..g_song_count]) |s| {
+        if (s) |song| rl.unloadMusicStream(song);
+    }
+    g_song_count = 0;
+}
+
+fn startMenuMusic() void {
+    if (!g_audio_ready or g_menu_music == null) return;
+    g_menu_music_playing = true;
+    rl.setMusicVolume(g_menu_music.?, 0.35);
+    rl.playMusicStream(g_menu_music.?);
+}
+
+fn stopMenuMusic() void {
+    if (!g_audio_ready or g_menu_music == null) return;
+    rl.stopMusicStream(g_menu_music.?);
+    g_menu_music_playing = false;
+}
+
 // === Minimap ===
 var g_mm_scale: f32 = 1.0;
 var g_mm_cx: f32 = 0;
@@ -1254,11 +1344,14 @@ fn startMap(map_idx: usize) !void {
     try bakeLightPoolMesh();
 
     buildMinimap();
+    loadMapMusic(map_idx);
     g_map_loaded = true;
 }
 
 fn endMap() void {
     if (!g_map_loaded) return;
+    stopMusic();
+    unloadMusic();
     rl.unloadMesh(g_road_mesh);
     g_road_mat.unload();
     rl.unloadMesh(g_bldg_mesh);
@@ -1291,6 +1384,15 @@ pub fn main() !void {
     g_ff = ForceFeedback.init();
     defer g_ff.deinit();
 
+    // Audio
+    rl.initAudioDevice();
+    defer rl.closeAudioDevice();
+    g_audio_ready = true;
+    g_menu_music = rl.loadMusicStream("assets/Pole Position Pulse.mp3") catch null;
+    defer if (g_menu_music) |m| rl.unloadMusicStream(m);
+    startMenuMusic();
+    defer stopMenuMusic();
+
     const identity = rl.Matrix.identity();
 
     // State: 0=title, 1=car_select, 2=map_select, 3=playing
@@ -1309,6 +1411,7 @@ pub fn main() !void {
         const dt = @min(rl.getFrameTime(), 1.0 / 30.0);
         elapsed += dt;
         g_wheel.poll();
+        updateMusic();
         garage_yaw += dt * 0.6;
 
         switch (state) {
