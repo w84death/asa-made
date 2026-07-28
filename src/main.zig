@@ -1,10 +1,14 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-// === Linux joystick direct access ===
+// === Linux input headers ===
 const jsy = @cImport({
     @cInclude("fcntl.h");
     @cInclude("unistd.h");
+});
+const ev = @cImport({
+    @cInclude("sys/ioctl.h");
+    @cInclude("linux/input.h");
 });
 
 const JS_EVENT_AXIS: u8 = 0x02;
@@ -35,15 +39,15 @@ const Wheel = struct {
 
     fn poll(self: *Wheel) void {
         if (!self.available) return;
-        var ev: JsEvent = undefined;
+        var event: JsEvent = undefined;
         const sz: usize = @sizeOf(JsEvent);
         while (true) {
-            const n = jsy.read(self.fd, &ev, sz);
+            const n = jsy.read(self.fd, &event, sz);
             if (n != sz) break;
-            if (ev.@"type" & JS_EVENT_AXIS != 0) {
-                if (ev.number < 8) self.axes[ev.number] = @as(f32, @floatFromInt(ev.value)) / 32767.0;
-            } else if (ev.@"type" & JS_EVENT_BUTTON != 0) {
-                if (ev.number < 32) self.buttons[ev.number] = ev.value != 0;
+            if (event.@"type" & JS_EVENT_AXIS != 0) {
+                if (event.number < 8) self.axes[event.number] = @as(f32, @floatFromInt(event.value)) / 32767.0;
+            } else if (event.@"type" & JS_EVENT_BUTTON != 0) {
+                if (event.number < 32) self.buttons[event.number] = event.value != 0;
             }
         }
     }
@@ -62,6 +66,132 @@ const Wheel = struct {
 };
 
 var g_wheel: Wheel = .{};
+
+// === Force feedback via evdev ===
+const ForceFeedback = struct {
+    fd: c_int = -1,
+    available: bool = false,
+    spring_id: i16 = -1,
+    rumble_id: i16 = -1,
+    rumble_playing: bool = false,
+
+    fn init() ForceFeedback {
+        var self = ForceFeedback{};
+
+        // Find the evdev device that supports FF
+        var i: c_int = 0;
+        while (i < 32) : (i += 1) {
+            var path_buf: [64]u8 = undefined;
+            const path = std.fmt.bufPrintZ(&path_buf, "/dev/input/event{d}", .{i}) catch continue;
+            const fd = jsy.open(path.ptr, jsy.O_RDWR);
+            if (fd < 0) continue;
+
+            // Check if device supports FF
+            var evbits: [4]u8 = .{0} ** 4;
+            const EVIOCGBIT0: c_ulong = ev.EVIOCGBIT(0, 4);
+            _ = ev.ioctl(fd, EVIOCGBIT0, &evbits);
+            const ev_type_ff: c_int = ev.EV_FF;
+            const byte_idx: usize = @intCast(@divTrunc(ev_type_ff, 8));
+            const bit_idx: u3 = @intCast(@mod(ev_type_ff, 8));
+            if (byte_idx < evbits.len and (evbits[byte_idx] & (@as(u8, 1) << bit_idx)) != 0) {
+                self.fd = fd;
+                self.available = true;
+                break;
+            }
+            _ = jsy.close(fd);
+        }
+        if (!self.available) return self;
+
+        // Upload spring (auto-centering)
+        var spring: ev.struct_ff_effect = std.mem.zeroes(ev.struct_ff_effect);
+        spring.@"type" = ev.FF_SPRING;
+        spring.id = -1;
+        spring.replay.length = 0; // infinite
+        spring.u.condition[0].right_coeff = 0x5000;
+        spring.u.condition[0].left_coeff = 0x5000;
+        spring.u.condition[0].right_saturation = 0xFFFF;
+        spring.u.condition[0].left_saturation = 0xFFFF;
+        spring.u.condition[0].center = 0;
+        spring.u.condition[0].deadband = 0x300;
+        spring.u.condition[1] = spring.u.condition[0];
+
+        if (ev.ioctl(self.fd, ev.EVIOCSFF, &spring) >= 0) {
+            self.spring_id = spring.id;
+            self.playEffect(self.spring_id, 1);
+        }
+
+        return self;
+    }
+
+    fn deinit(self: *ForceFeedback) void {
+        if (!self.available) return;
+        if (self.spring_id >= 0) {
+            self.playEffect(self.spring_id, 0);
+            _ = ev.ioctl(self.fd, ev.EVIOCRMFF, self.spring_id);
+        }
+        if (self.rumble_id >= 0) {
+            self.playEffect(self.rumble_id, 0);
+            _ = ev.ioctl(self.fd, ev.EVIOCRMFF, self.rumble_id);
+        }
+        _ = jsy.close(self.fd);
+    }
+
+    fn playEffect(self: ForceFeedback, id: i16, value: i32) void {
+        if (id < 0) return;
+        var ie: ev.struct_input_event = std.mem.zeroes(ev.struct_input_event);
+        ie.@"type" = ev.EV_FF;
+        ie.code = @intCast(id);
+        ie.value = value;
+        _ = jsy.write(self.fd, &ie, @sizeOf(ev.struct_input_event));
+    }
+
+    fn updateRumble(self: *ForceFeedback, speed: f32, dt: f32) void {
+        if (!self.available) return;
+        const want_rumble = @abs(speed) > 3.0;
+        const magnitude: u16 = @intFromFloat(std.math.clamp(@abs(speed) * 1800.0, 0.0, 8000.0));
+
+        if (!want_rumble) {
+            if (self.rumble_playing) {
+                self.playEffect(self.rumble_id, 0);
+                self.rumble_playing = false;
+            }
+            return;
+        }
+
+        // Re-upload with new magnitude each ~0.1s
+        var rumble: ev.struct_ff_effect = std.mem.zeroes(ev.struct_ff_effect);
+        rumble.@"type" = ev.FF_RUMBLE;
+        rumble.id = self.rumble_id;
+        rumble.replay.length = 200; // 200ms, will be replayed
+        rumble.u.rumble.strong_magnitude = magnitude;
+        rumble.u.rumble.weak_magnitude = magnitude;
+        _ = ev.ioctl(self.fd, ev.EVIOCSFF, &rumble);
+        if (rumble.id < 0) return;
+        self.rumble_id = rumble.id;
+
+        if (!self.rumble_playing) {
+            self.playEffect(self.rumble_id, 1);
+            self.rumble_playing = true;
+        }
+        _ = dt;
+    }
+
+    fn collision(self: *ForceFeedback) void {
+        if (!self.available) return;
+        var hit: ev.struct_ff_effect = std.mem.zeroes(ev.struct_ff_effect);
+        hit.@"type" = ev.FF_RUMBLE;
+        hit.id = -1;
+        hit.replay.length = 300;
+        hit.u.rumble.strong_magnitude = 0xC000;
+        hit.u.rumble.weak_magnitude = 0xFFFF;
+        _ = ev.ioctl(self.fd, ev.EVIOCSFF, &hit);
+        self.playEffect(hit.id, 1);
+        // Clean up after it plays (one-shot)
+        // The driver will remove it when replay count reaches 0
+    }
+};
+
+var g_ff: ForceFeedback = .{};
 
 // === Config ===
 const screen_width = 720;
@@ -560,6 +690,7 @@ const Car = struct {
     speed: f32 = 0,
     steer_visual: f32 = 0,
     drift_amount: f32 = 0,
+    collided: bool = false,
 
     fn reset(self: *Car) void {
         const start = g_spline[0];
@@ -646,6 +777,7 @@ const Car = struct {
         const nearest = nearestTrack(self.position);
         const lateral = dot(.{ .x = self.position.x - nearest.center.x, .z = self.position.z - nearest.center.z }, nearest.normal);
         const limit = road_half_width - 1.1;
+        self.collided = false;
         if (@abs(lateral) > limit) {
             const excess = lateral - std.math.clamp(lateral, -limit, limit);
             self.position.x -= nearest.normal.x * excess;
@@ -653,6 +785,7 @@ const Car = struct {
             const ns = dot(self.velocity, nearest.normal);
             if (ns * lateral > 0.0) self.velocity = add(self.velocity, scale(nearest.normal, -ns * 1.25));
             self.velocity = scale(self.velocity, 0.76);
+            self.collided = true;
             self.speed = dot(self.velocity, forward);
         }
     }
@@ -1082,6 +1215,8 @@ pub fn main() !void {
 
     g_wheel = Wheel.init();
     defer g_wheel.deinit();
+    g_ff = ForceFeedback.init();
+    defer g_ff.deinit();
 
     const identity = rl.Matrix.identity();
 
@@ -1096,6 +1231,8 @@ pub fn main() !void {
             camera_rig.reset(car);
         }
         car.update(dt);
+        g_ff.updateRumble(car.speed, dt);
+        if (car.collided) g_ff.collision();
         const camera = camera_rig.update(car, dt);
 
         rl.beginDrawing();
