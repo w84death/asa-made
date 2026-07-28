@@ -431,6 +431,15 @@ fn mixColor(a: rl.Color, b: rl.Color, t: f32) rl.Color {
     };
 }
 
+fn defaultShader() rl.Shader {
+    return .{ .id = rl.gl.rlGetShaderIdDefault(), .locs = rl.gl.rlGetShaderLocsDefault() };
+}
+
+fn detachMaterialResources(material: *rl.Material) void {
+    material.shader = defaultShader();
+    material.maps[0].texture.id = rl.gl.rlGetTextureIdDefault();
+}
+
 fn localPoint(center: Vec2, yaw: f32, right: f32, fwd: f32) Vec2 {
     return .{
         .x = center.x + @cos(yaw) * right + @sin(yaw) * fwd,
@@ -1164,6 +1173,10 @@ const VehicleModel = struct {
     }
 
     fn unload(self: VehicleModel) void {
+        var material_index: usize = 0;
+        while (material_index < @as(usize, @intCast(self.model.materialCount))) : (material_index += 1) {
+            self.model.materials[material_index].shader = defaultShader();
+        }
         self.model.unload();
     }
 
@@ -1859,14 +1872,18 @@ fn endMap() void {
     stopMusic();
     unloadMusic();
     rl.unloadMesh(g_road_mesh);
+    detachMaterialResources(&g_road_mat);
     g_road_mat.unload();
     rl.unloadMesh(g_barrier_mesh);
+    detachMaterialResources(&g_barrier_mat);
     g_barrier_mat.unload();
-    for (g_facade_meshes, g_facade_mats) |mesh, material| {
-        rl.unloadMesh(mesh);
-        material.unload();
+    for (0..g_facade_meshes.len) |index| {
+        rl.unloadMesh(g_facade_meshes[index]);
+        detachMaterialResources(&g_facade_mats[index]);
+        g_facade_mats[index].unload();
     }
     rl.unloadMesh(g_roof_mesh);
+    detachMaterialResources(&g_roof_mat);
     g_roof_mat.unload();
     g_arena.deinit();
     g_map_loaded = false;
@@ -1904,7 +1921,10 @@ pub fn main() !void {
     g_ground_mesh = rl.genMeshPlane(30000.0, 30000.0, 1, 1);
     defer rl.unloadMesh(g_ground_mesh);
     g_ground_mat = try rl.loadMaterialDefault();
-    defer g_ground_mat.unload();
+    defer {
+        detachMaterialResources(&g_ground_mat);
+        g_ground_mat.unload();
+    }
     g_ground_mat.shader = g_ground_shader;
     g_ground_mat.maps[0].texture = g_ground_texture;
     drawLoading("LOADING ROAD MATERIALS");

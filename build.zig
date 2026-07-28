@@ -59,6 +59,7 @@ fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget,
         "-DSUPPORT_MODULE_RTEXT=1",
         "-DSUPPORT_MODULE_RMODELS=1",
         "-DSUPPORT_MODULE_RAUDIO=1",
+        "-DSUPPORT_FILEFORMAT_JPG=1",
         "-w",
     };
 
