@@ -67,18 +67,24 @@ const Wheel = struct {
 
 var g_wheel: Wheel = .{};
 
-// === Force feedback via evdev ===
+// === Force feedback via evdev (Logitech DFP: CONSTANT + AUTOCENTER + GAIN) ===
+const EVIOCSFF: c_ulong = 0x40304580;
+const EVIOCRMFF: c_ulong = 0x40044581;
+const FF_CONSTANT: u16 = 0x52;
+const FF_GAIN: u16 = 0x60;
+const FF_AUTOCENTER: u16 = 0x61;
+const EV_FF: u16 = 0x15;
+
 const ForceFeedback = struct {
     fd: c_int = -1,
     available: bool = false,
-    spring_id: i16 = -1,
-    rumble_id: i16 = -1,
-    rumble_playing: bool = false,
+    effect: ev.struct_ff_effect = std.mem.zeroes(ev.struct_ff_effect),
+    collision_force: f32 = 0,
 
     fn init() ForceFeedback {
         var self = ForceFeedback{};
 
-        // Find the evdev device that supports FF
+        // Scan for evdev device with FF support (EV_FF = bit 21)
         var i: c_int = 0;
         while (i < 32) : (i += 1) {
             var path_buf: [64]u8 = undefined;
@@ -86,14 +92,10 @@ const ForceFeedback = struct {
             const fd = jsy.open(path.ptr, jsy.O_RDWR);
             if (fd < 0) continue;
 
-            // Check if device supports FF
             var evbits: [4]u8 = .{0} ** 4;
-            const EVIOCGBIT0: c_ulong = ev.EVIOCGBIT(0, 4);
+            const EVIOCGBIT0: c_ulong = 0x80044520; // EVIOCGBIT(0, 4)
             _ = ev.ioctl(fd, EVIOCGBIT0, &evbits);
-            const ev_type_ff: c_int = ev.EV_FF;
-            const byte_idx: usize = @intCast(@divTrunc(ev_type_ff, 8));
-            const bit_idx: u3 = @intCast(@mod(ev_type_ff, 8));
-            if (byte_idx < evbits.len and (evbits[byte_idx] & (@as(u8, 1) << bit_idx)) != 0) {
+            if (evbits[2] & (@as(u8, 1) << 5) != 0) { // bit 21 = byte 2 bit 5
                 self.fd = fd;
                 self.available = true;
                 break;
@@ -102,92 +104,60 @@ const ForceFeedback = struct {
         }
         if (!self.available) return self;
 
-        // Upload spring (auto-centering)
-        var spring: ev.struct_ff_effect = std.mem.zeroes(ev.struct_ff_effect);
-        spring.@"type" = ev.FF_SPRING;
-        spring.id = -1;
-        spring.replay.length = 0; // infinite
-        spring.u.condition[0].right_coeff = 0x5000;
-        spring.u.condition[0].left_coeff = 0x5000;
-        spring.u.condition[0].right_saturation = 0xFFFF;
-        spring.u.condition[0].left_saturation = 0xFFFF;
-        spring.u.condition[0].center = 0;
-        spring.u.condition[0].deadband = 0x300;
-        spring.u.condition[1] = spring.u.condition[0];
+        // Set master gain to max
+        self.writeFF(FF_GAIN, 0xFFFF);
 
-        if (ev.ioctl(self.fd, ev.EVIOCSFF, &spring) >= 0) {
-            self.spring_id = spring.id;
-            self.playEffect(self.spring_id, 1);
-        }
+        // Set autocenter spring (moderate)
+        self.writeFF(FF_AUTOCENTER, 0x5000);
+
+        // Upload a continuous constant effect for road vibration + collision
+        self.effect.@"type" = FF_CONSTANT;
+        self.effect.id = -1;
+        self.effect.replay.length = 0; // infinite
+        self.effect.u.constant.level = 0;
+        _ = ev.ioctl(self.fd, EVIOCSFF, &self.effect);
+        self.writeFF(EV_FF, 1); // play
 
         return self;
     }
 
     fn deinit(self: *ForceFeedback) void {
         if (!self.available) return;
-        if (self.spring_id >= 0) {
-            self.playEffect(self.spring_id, 0);
-            _ = ev.ioctl(self.fd, ev.EVIOCRMFF, self.spring_id);
-        }
-        if (self.rumble_id >= 0) {
-            self.playEffect(self.rumble_id, 0);
-            _ = ev.ioctl(self.fd, ev.EVIOCRMFF, self.rumble_id);
-        }
+        self.writeFF(EV_FF, 0); // stop constant
+        if (self.effect.id >= 0) _ = ev.ioctl(self.fd, EVIOCRMFF, self.effect.id);
+        self.writeFF(FF_AUTOCENTER, 0); // disable spring
         _ = jsy.close(self.fd);
     }
 
-    fn playEffect(self: ForceFeedback, id: i16, value: i32) void {
-        if (id < 0) return;
+    fn writeFF(self: ForceFeedback, code: u16, value: i32) void {
         var ie: ev.struct_input_event = std.mem.zeroes(ev.struct_input_event);
-        ie.@"type" = ev.EV_FF;
-        ie.code = @intCast(id);
+        ie.@"type" = EV_FF;
+        ie.code = if (self.effect.id >= 0 and code == EV_FF) @intCast(self.effect.id) else code;
         ie.value = value;
         _ = jsy.write(self.fd, &ie, @sizeOf(ev.struct_input_event));
     }
 
-    fn updateRumble(self: *ForceFeedback, speed: f32, dt: f32) void {
+    fn update(self: *ForceFeedback, speed: f32, time: f32, collided: bool) void {
         if (!self.available) return;
-        const want_rumble = @abs(speed) > 3.0;
-        const magnitude: u16 = @intFromFloat(std.math.clamp(@abs(speed) * 1800.0, 0.0, 8000.0));
 
-        if (!want_rumble) {
-            if (self.rumble_playing) {
-                self.playEffect(self.rumble_id, 0);
-                self.rumble_playing = false;
-            }
-            return;
+        var level: f32 = 0;
+
+        // Road surface vibration — proportional to speed
+        const sf = std.math.clamp(@abs(speed) / 50.0, 0.0, 1.0);
+        if (sf > 0.05) {
+            const rumble = @sin(time * 65.0) * sf * 3000.0;
+            const hash_noise: f32 = @sin(time * 999.7) * 5.0;
+            level += rumble + hash_noise * sf * 300.0;
         }
 
-        // Re-upload with new magnitude each ~0.1s
-        var rumble: ev.struct_ff_effect = std.mem.zeroes(ev.struct_ff_effect);
-        rumble.@"type" = ev.FF_RUMBLE;
-        rumble.id = self.rumble_id;
-        rumble.replay.length = 200; // 200ms, will be replayed
-        rumble.u.rumble.strong_magnitude = magnitude;
-        rumble.u.rumble.weak_magnitude = magnitude;
-        _ = ev.ioctl(self.fd, ev.EVIOCSFF, &rumble);
-        if (rumble.id < 0) return;
-        self.rumble_id = rumble.id;
+        // Collision impact — strong decaying pulse
+        if (collided) self.collision_force = 28000.0;
+        self.collision_force *= 0.80;
+        if (self.collision_force > 1.0) level += self.collision_force;
 
-        if (!self.rumble_playing) {
-            self.playEffect(self.rumble_id, 1);
-            self.rumble_playing = true;
-        }
-        _ = dt;
-    }
-
-    fn collision(self: *ForceFeedback) void {
-        if (!self.available) return;
-        var hit: ev.struct_ff_effect = std.mem.zeroes(ev.struct_ff_effect);
-        hit.@"type" = ev.FF_RUMBLE;
-        hit.id = -1;
-        hit.replay.length = 300;
-        hit.u.rumble.strong_magnitude = 0xC000;
-        hit.u.rumble.weak_magnitude = 0xFFFF;
-        _ = ev.ioctl(self.fd, ev.EVIOCSFF, &hit);
-        self.playEffect(hit.id, 1);
-        // Clean up after it plays (one-shot)
-        // The driver will remove it when replay count reaches 0
+        // Upload updated constant
+        self.effect.u.constant.level = @intFromFloat(std.math.clamp(level, -32767.0, 32767.0));
+        _ = ev.ioctl(self.fd, EVIOCSFF, &self.effect);
     }
 };
 
@@ -720,7 +690,12 @@ const Car = struct {
 
         if (g_wheel.available) {
             const raw_steer = g_wheel.steering();
-            if (@abs(raw_steer) > 0.02) steer = -raw_steer;
+            if (@abs(raw_steer) > 0.02) {
+                // Non-linear curve: more responsive near center, full lock at edges
+                const abs_s = @abs(raw_steer);
+                const sign: f32 = if (raw_steer > 0) 1.0 else -1.0;
+                steer = -sign * std.math.pow(f32, abs_s, 0.65) * 1.3;
+            }
 
             const wheel_throttle = g_wheel.throttle();
             const wheel_brake = g_wheel.brake();
@@ -1231,8 +1206,7 @@ pub fn main() !void {
             camera_rig.reset(car);
         }
         car.update(dt);
-        g_ff.updateRumble(car.speed, dt);
-        if (car.collided) g_ff.collision();
+        g_ff.update(car.speed, elapsed, car.collided);
         const camera = camera_rig.update(car, dt);
 
         rl.beginDrawing();
