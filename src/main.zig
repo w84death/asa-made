@@ -589,7 +589,7 @@ const Car = struct {
 
         if (g_wheel.available) {
             const raw_steer = g_wheel.steering();
-            if (@abs(raw_steer) > 0.02) steer = raw_steer;
+            if (@abs(raw_steer) > 0.02) steer = -raw_steer;
 
             const wheel_throttle = g_wheel.throttle();
             const wheel_brake = g_wheel.brake();
