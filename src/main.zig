@@ -238,6 +238,45 @@ const ground_fs =
     \\}
 ;
 
+const road_vs =
+    \\#version 330
+    \\in vec3 vertexPosition;
+    \\in vec2 vertexTexCoord;
+    \\in vec4 vertexColor;
+    \\uniform mat4 mvp;
+    \\out vec2 fragTexCoord;
+    \\out vec4 fragColor;
+    \\out vec3 fragPosition;
+    \\void main() {
+    \\    fragTexCoord = vertexTexCoord;
+    \\    fragColor = vertexColor;
+    \\    fragPosition = vertexPosition;
+    \\    gl_Position = mvp * vec4(vertexPosition, 1.0);
+    \\}
+;
+
+const road_fs =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\in vec3 fragPosition;
+    \\uniform sampler2D texture0;
+    \\uniform vec4 colDiffuse;
+    \\uniform vec3 viewPosition;
+    \\out vec4 finalColor;
+    \\void main() {
+    \\    vec4 surface = fragColor * colDiffuse;
+    \\    if (fragTexCoord.x >= 0.0) {
+    \\        vec3 tarmac = texture(texture0, fragTexCoord).rgb;
+    \\        surface.rgb = surface.rgb * 0.68 + tarmac * 0.32;
+    \\    }
+    \\    float distanceFog = smoothstep(48.0, 235.0, distance(viewPosition.xz, fragPosition.xz));
+    \\    vec3 haze = vec3(0.105, 0.086, 0.058);
+    \\    surface.rgb = mix(surface.rgb, haze, distanceFog * 0.72);
+    \\    finalColor = surface;
+    \\}
+;
+
 const car_vs =
     \\#version 330
     \\in vec3 vertexPosition;
@@ -385,6 +424,9 @@ var g_ground_mat: rl.Material = undefined;
 var g_ground_texture: rl.Texture2D = undefined;
 var g_ground_shader: rl.Shader = undefined;
 var g_ground_view_position_loc: i32 = -1;
+var g_tarmac_texture: rl.Texture2D = undefined;
+var g_road_shader: rl.Shader = undefined;
+var g_road_view_position_loc: i32 = -1;
 
 fn beginFrame() void {
     rl.beginDrawing();
@@ -602,19 +644,26 @@ fn nearestTrack(position: Vec2) NearestTrack {
 const MeshBuilder = struct {
     alloc: std.mem.Allocator,
     pos: std.ArrayList(f32),
+    uv: std.ArrayList(f32),
     col: std.ArrayList(u8),
 
     fn init(c: std.mem.Allocator) MeshBuilder {
-        return .{ .alloc = c, .pos = .empty, .col = .empty };
+        return .{ .alloc = c, .pos = .empty, .uv = .empty, .col = .empty };
     }
 
     fn deinit(self: *MeshBuilder) void {
         self.pos.deinit(self.alloc);
+        self.uv.deinit(self.alloc);
         self.col.deinit(self.alloc);
     }
 
     fn vert(self: *MeshBuilder, x: f32, y: f32, z: f32, c: rl.Color) !void {
+        try self.vertUv(x, y, z, -1.0, -1.0, c);
+    }
+
+    fn vertUv(self: *MeshBuilder, x: f32, y: f32, z: f32, u: f32, v: f32, c: rl.Color) !void {
         try self.pos.appendSlice(self.alloc, &.{ x, y, z });
+        try self.uv.appendSlice(self.alloc, &.{ u, v });
         try self.col.appendSlice(self.alloc, &.{ c.r, c.g, c.b, c.a });
     }
 
@@ -624,14 +673,22 @@ const MeshBuilder = struct {
         try self.vert(cx, cy, cz, cc);
     }
 
+    fn triUv(self: *MeshBuilder, ax: f32, ay: f32, az: f32, au: f32, av: f32, bx: f32, by: f32, bz: f32, bu: f32, bv: f32, cx: f32, cy: f32, cz: f32, cu: f32, cv: f32, ca: rl.Color, cb: rl.Color, cc: rl.Color) !void {
+        try self.vertUv(ax, ay, az, au, av, ca);
+        try self.vertUv(bx, by, bz, bu, bv, cb);
+        try self.vertUv(cx, cy, cz, cu, cv, cc);
+    }
+
     fn build(self: *MeshBuilder, shader: rl.Shader) !struct { mesh: rl.Mesh, mat: rl.Material } {
         const pos_owned = try self.pos.toOwnedSlice(self.alloc);
+        const uv_owned = try self.uv.toOwnedSlice(self.alloc);
         const col_owned = try self.col.toOwnedSlice(self.alloc);
 
         var mesh = std.mem.zeroes(rl.Mesh);
         mesh.vertexCount = @intCast(pos_owned.len / 3);
         mesh.triangleCount = @intCast(pos_owned.len / 9);
         mesh.vertices = pos_owned.ptr;
+        mesh.texcoords = uv_owned.ptr;
         mesh.colors = col_owned.ptr;
         rl.uploadMesh(&mesh, false);
 
@@ -671,8 +728,10 @@ fn bakeRoadMesh() !void {
         const asphalt0 = mixColor(color(24, 25, 22, 255), color(61, 48, 31, 255), lit0 * 0.58);
         const asphalt1 = mixColor(color(24, 25, 22, 255), color(61, 48, 31, 255), lit1 * 0.58);
 
-        try mb.tri(in0.x, road_y, in0.z, in1.x, road_y, in1.z, out1.x, road_y, out1.z, asphalt0, asphalt1, asphalt1);
-        try mb.tri(in0.x, road_y, in0.z, out1.x, road_y, out1.z, out0.x, road_y, out0.z, asphalt0, asphalt1, asphalt0);
+        const texture_u0 = sp0.dist / 56.0;
+        const texture_u1 = texture_u0 + vecLength(.{ .x = p1.x - p0.x, .z = p1.z - p0.z }) / 56.0;
+        try mb.triUv(in0.x, road_y, in0.z, texture_u0, 0.34, in1.x, road_y, in1.z, texture_u1, 0.34, out1.x, road_y, out1.z, texture_u1, 0.66, asphalt0, asphalt1, asphalt1);
+        try mb.triUv(in0.x, road_y, in0.z, texture_u0, 0.34, out1.x, road_y, out1.z, texture_u1, 0.66, out0.x, road_y, out0.z, texture_u0, 0.66, asphalt0, asphalt1, asphalt0);
 
         // Shoulder lines
         const white = color(198, 198, 181, 255);
@@ -687,9 +746,10 @@ fn bakeRoadMesh() !void {
         }
     }
 
-    const built = try mb.build(g_flat_shader);
+    const built = try mb.build(g_road_shader);
     g_road_mesh = built.mesh;
     g_road_mat = built.mat;
+    g_road_mat.maps[0].texture = g_tarmac_texture;
 }
 
 fn stripQuad(mb: *MeshBuilder, p0: Vec2, p1: Vec2, n0: Vec2, n1: Vec2, offset: f32, w: f32, c: rl.Color) !void {
@@ -763,6 +823,7 @@ fn bakeLightPoolMesh() !void {
     defer mb.deinit();
 
     for (g_lamps) |lamp| {
+        const pool_center = add(lamp.pos, scale(lamp.normal, -2.8));
         const center_c = if (lamp.cool) color(88, 218, 199, 36) else color(255, 151, 61, 48);
         const edge_c = color(38, 31, 23, 0);
         const slices: usize = 18;
@@ -770,10 +831,10 @@ fn bakeLightPoolMesh() !void {
         while (s < slices) : (s += 1) {
             const a0 = tau * @as(f32, @floatFromInt(s)) / slices;
             const a1 = tau * @as(f32, @floatFromInt(s + 1)) / slices;
-            const p0 = Vec2{ .x = lamp.pos.x + @cos(a0) * 6.0, .z = lamp.pos.z + @sin(a0) * 9.5 };
-            const p1 = Vec2{ .x = lamp.pos.x + @cos(a1) * 6.0, .z = lamp.pos.z + @sin(a1) * 9.5 };
+            const p0 = Vec2{ .x = pool_center.x + @cos(a0) * 6.0, .z = pool_center.z + @sin(a0) * 9.5 };
+            const p1 = Vec2{ .x = pool_center.x + @cos(a1) * 6.0, .z = pool_center.z + @sin(a1) * 9.5 };
             const y = road_y + 0.02;
-            try mb.tri(lamp.pos.x, y, lamp.pos.z, p1.x, y, p1.z, p0.x, y, p0.z, center_c, edge_c, edge_c);
+            try mb.tri(pool_center.x, y, pool_center.z, p1.x, y, p1.z, p0.x, y, p0.z, center_c, edge_c, edge_c);
         }
     }
 
@@ -1125,6 +1186,30 @@ fn drawPlayerCar(pm: PlayerModel, position: Vec2, yaw: f32) void {
     }
 }
 
+fn drawLampCone(apex: rl.Vector3, cool: bool) void {
+    const top_color = if (cool) color(122, 236, 216, 24) else color(255, 171, 91, 29);
+    const edge_color = if (cool) color(80, 191, 179, 0) else color(220, 104, 40, 0);
+    const slices: usize = 20;
+
+    rl.beginBlendMode(.alpha);
+    rl.gl.rlDisableDepthMask();
+    rl.gl.rlDisableBackfaceCulling();
+    rl.gl.rlBegin(rl.gl.rl_triangles);
+    for (0..slices) |slice| {
+        const a0 = tau * @as(f32, @floatFromInt(slice)) / @as(f32, @floatFromInt(slices));
+        const a1 = tau * @as(f32, @floatFromInt(slice + 1)) / @as(f32, @floatFromInt(slices));
+        rl.gl.rlColor4ub(top_color.r, top_color.g, top_color.b, top_color.a);
+        rl.gl.rlVertex3f(apex.x, apex.y, apex.z);
+        rl.gl.rlColor4ub(edge_color.r, edge_color.g, edge_color.b, edge_color.a);
+        rl.gl.rlVertex3f(apex.x + @cos(a0) * 3.8, road_y + 0.08, apex.z + @sin(a0) * 5.4);
+        rl.gl.rlVertex3f(apex.x + @cos(a1) * 3.8, road_y + 0.08, apex.z + @sin(a1) * 5.4);
+    }
+    rl.gl.rlEnd();
+    rl.gl.rlEnableBackfaceCulling();
+    rl.gl.rlEnableDepthMask();
+    rl.endBlendMode();
+}
+
 fn drawLamps(car_pos: Vec2) void {
     const cull_sq = 180.0 * 180.0;
     for (g_lamps) |lamp| {
@@ -1136,6 +1221,7 @@ fn drawLamps(car_pos: Vec2) void {
         const top = v3(lamp.pos, road_y + 5.0);
         const lamp_pos = add(lamp.pos, scale(lamp.normal, -2.8));
         const lamp3 = v3(lamp_pos, road_y + 4.85);
+        drawLampCone(lamp3, lamp.cool);
         rl.drawCylinderEx(base, top, 0.09, 0.06, 6, color(73, 67, 59, 255));
         rl.drawCylinderEx(top, lamp3, 0.06, 0.045, 6, color(91, 79, 65, 255));
         const glow = if (lamp.cool) color(80, 221, 205, 62) else color(255, 139, 44, 72);
@@ -1585,6 +1671,14 @@ pub fn main() !void {
     defer g_ground_mat.unload();
     g_ground_mat.shader = g_ground_shader;
     g_ground_mat.maps[0].texture = g_ground_texture;
+    g_tarmac_texture = try rl.loadTexture("assets/tarmac.png");
+    defer rl.unloadTexture(g_tarmac_texture);
+    rl.genTextureMipmaps(&g_tarmac_texture);
+    rl.setTextureWrap(g_tarmac_texture, .repeat);
+    rl.setTextureFilter(g_tarmac_texture, .trilinear);
+    g_road_shader = try rl.loadShaderFromMemory(road_vs, road_fs);
+    defer g_road_shader.unload();
+    g_road_view_position_loc = rl.getShaderLocation(g_road_shader, "viewPosition");
 
     drawLoading("LOADING VEHICLE");
     const player_model = try PlayerModel.init();
@@ -1721,6 +1815,7 @@ pub fn main() !void {
                 const view_position = [3]f32{ camera.position.x, camera.position.y, camera.position.z };
                 rl.setShaderValue(g_flat_shader, g_view_position_loc, &view_position, .vec3);
                 rl.setShaderValue(g_ground_shader, g_ground_view_position_loc, &view_position, .vec3);
+                rl.setShaderValue(g_road_shader, g_road_view_position_loc, &view_position, .vec3);
 
                 camera.begin();
                 rl.drawMesh(g_ground_mesh, g_ground_mat, identity);
