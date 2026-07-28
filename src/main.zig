@@ -1522,6 +1522,7 @@ fn drawDebugWheel() void {
 // === Loading screen ===
 var g_load_anim: f32 = 0;
 var g_title_tex: rl.Texture2D = undefined;
+var g_loading_tex: rl.Texture2D = undefined;
 
 fn drawBootstrapLoading() void {
     rl.beginDrawing();
@@ -1541,15 +1542,15 @@ fn drawLoading(stage: [:0]const u8) void {
     rl.clearBackground(color(4, 4, 3, 255));
 
     // Title image background (cover-fit)
-    const img_w: f32 = @floatFromInt(g_title_tex.width);
-    const img_h: f32 = @floatFromInt(g_title_tex.height);
+    const img_w: f32 = @floatFromInt(g_loading_tex.width);
+    const img_h: f32 = @floatFromInt(g_loading_tex.height);
     const scr_w: f32 = @floatFromInt(screen_width);
     const scr_h: f32 = @floatFromInt(screen_height);
     const cover_scale = @max(scr_w / img_w, scr_h / img_h);
     const draw_w = img_w * cover_scale;
     const draw_h = img_h * cover_scale;
     rl.drawTexturePro(
-        g_title_tex,
+        g_loading_tex,
         .{ .x = 0, .y = 0, .width = img_w, .height = img_h },
         .{ .x = (scr_w - draw_w) * 0.5, .y = (scr_h - draw_h) * 0.5, .width = draw_w, .height = draw_h },
         .{ .x = 0, .y = 0 },
@@ -1900,7 +1901,9 @@ pub fn main() !void {
     drawBootstrapLoading();
 
     // Persistent resources
-    g_title_tex = try rl.loadTexture("assets/title.png");
+    g_loading_tex = try rl.loadTexture("assets/loading.jpg");
+    defer rl.unloadTexture(g_loading_tex);
+    g_title_tex = try rl.loadTexture("assets/title.jpg");
     defer rl.unloadTexture(g_title_tex);
     g_flat_shader = try rl.loadShaderFromMemory(flat_vs, flat_fs);
     defer g_flat_shader.unload();
@@ -1910,7 +1913,7 @@ pub fn main() !void {
     g_post_shader = try rl.loadShaderFromMemory(null, post_fs);
     defer g_post_shader.unload();
     drawLoading("LOADING CITY GROUND");
-    g_ground_texture = try rl.loadTexture("assets/tex/city-ground.png");
+    g_ground_texture = try rl.loadTexture("assets/tex/city-ground.jpg");
     defer rl.unloadTexture(g_ground_texture);
     rl.genTextureMipmaps(&g_ground_texture);
     rl.setTextureWrap(g_ground_texture, .repeat);
@@ -1928,7 +1931,7 @@ pub fn main() !void {
     g_ground_mat.shader = g_ground_shader;
     g_ground_mat.maps[0].texture = g_ground_texture;
     drawLoading("LOADING ROAD MATERIALS");
-    g_tarmac_texture = try rl.loadTexture("assets/tex/tarmac.png");
+    g_tarmac_texture = try rl.loadTexture("assets/tex/tarmac.jpg");
     defer rl.unloadTexture(g_tarmac_texture);
     rl.genTextureMipmaps(&g_tarmac_texture);
     rl.setTextureWrap(g_tarmac_texture, .repeat);
@@ -1936,7 +1939,7 @@ pub fn main() !void {
     g_road_shader = try rl.loadShaderFromMemory(road_vs, road_fs);
     defer g_road_shader.unload();
     g_road_view_position_loc = rl.getShaderLocation(g_road_shader, "viewPosition");
-    g_barrier_texture = try rl.loadTexture("assets/tex/barrier.png");
+    g_barrier_texture = try rl.loadTexture("assets/tex/barrier.jpg");
     defer rl.unloadTexture(g_barrier_texture);
     rl.genTextureMipmaps(&g_barrier_texture);
     rl.setTextureWrap(g_barrier_texture, .repeat);
@@ -1945,8 +1948,8 @@ pub fn main() !void {
     defer g_barrier_shader.unload();
     g_barrier_view_position_loc = rl.getShaderLocation(g_barrier_shader, "viewPosition");
     drawLoading("LOADING CITY MATERIALS");
-    g_facade_textures[0] = try rl.loadTexture("assets/tex/front1.png");
-    g_facade_textures[1] = try rl.loadTexture("assets/tex/front4.png");
+    g_facade_textures[0] = try rl.loadTexture("assets/tex/front1.jpg");
+    g_facade_textures[1] = try rl.loadTexture("assets/tex/front4.jpg");
     defer for (g_facade_textures) |texture| rl.unloadTexture(texture);
     for (&g_facade_textures) |*texture| {
         rl.genTextureMipmaps(texture);
@@ -1956,7 +1959,7 @@ pub fn main() !void {
     g_facade_shader = try rl.loadShaderFromMemory(road_vs, facade_fs);
     defer g_facade_shader.unload();
     g_facade_view_position_loc = rl.getShaderLocation(g_facade_shader, "viewPosition");
-    g_roof_texture = try rl.loadTexture("assets/tex/roof.png");
+    g_roof_texture = try rl.loadTexture("assets/tex/roof.jpg");
     defer rl.unloadTexture(g_roof_texture);
     rl.genTextureMipmaps(&g_roof_texture);
     rl.setTextureWrap(g_roof_texture, .repeat);
