@@ -72,6 +72,7 @@ fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget,
         "-DSUPPORT_MODULE_RTEXT=1",
         "-DSUPPORT_MODULE_RMODELS=1",
         "-DSUPPORT_MODULE_RAUDIO=1",
+        "-DSUPPORT_FILEFORMAT_PNG=1",
         "-DSUPPORT_FILEFORMAT_JPG=1",
         "-w",
     };
@@ -153,6 +154,7 @@ fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget,
     exe_mod.addImport("wheel_driver", wheel_driver_mod);
     exe_mod.addImport("car_physics", car_physics_mod);
     exe_mod.linkLibrary(raylib_lib);
+    exe_mod.addWin32ResourceFile(.{ .file = b.path("windows.rc") });
     linkPlatformLibs(exe_mod, os_tag);
 
     return b.addExecutable(.{

@@ -20,6 +20,8 @@ const spline_spacing: f32 = 3.0;
 const collision_spacing: f32 = 12.0;
 const building_cull_dist: f32 = 65.0;
 const lamp_interval: f32 = 50.0;
+const traffic_spacing: f32 = 90.0;
+const traffic_draw_distance: f32 = 420.0;
 const civic_top_speed = car_physics.civic_config.top_speed;
 const tau: f32 = std.math.pi * 2.0;
 
@@ -1176,7 +1178,8 @@ fn drawLampCone(apex: rl.Vector3, cool: bool) void {
     const slices: usize = 20;
     const middle_y = apex.y + (road_y - apex.y) * 0.52;
 
-    rl.beginBlendMode(.alpha);
+    // Light volumes add illumination instead of covering geometry behind them.
+    rl.beginBlendMode(.additive);
     rl.gl.rlDisableDepthMask();
     rl.gl.rlDisableBackfaceCulling();
     rl.gl.rlBegin(rl.gl.rl_triangles);
@@ -1209,7 +1212,7 @@ fn drawLampCone(apex: rl.Vector3, cool: bool) void {
     rl.endBlendMode();
 }
 
-fn drawLamps(car_pos: Vec2) void {
+fn drawLamps(car_pos: Vec2, cones_only: bool) void {
     const cull_sq = 180.0 * 180.0;
     for (g_lamps) |lamp| {
         const dx = lamp.pos.x - car_pos.x;
@@ -1220,7 +1223,10 @@ fn drawLamps(car_pos: Vec2) void {
         const top = v3(lamp.pos, road_y + 5.0);
         const lamp_pos = add(lamp.pos, scale(lamp.normal, -2.8));
         const lamp3 = v3(lamp_pos, road_y + 4.85);
-        drawLampCone(lamp3, lamp.cool);
+        if (cones_only) {
+            drawLampCone(lamp3, lamp.cool);
+            continue;
+        }
         rl.drawCylinderEx(base, top, 0.09, 0.06, 6, color(73, 67, 59, 255));
         rl.drawCylinderEx(top, lamp3, 0.06, 0.045, 6, color(91, 79, 65, 255));
         const core = if (lamp.cool) color(211, 255, 235, 255) else color(255, 225, 165, 255);
@@ -1246,17 +1252,27 @@ fn drawTrafficLights(position: Vec2, yaw: f32, vehicle: VehicleModel) void {
     }
 }
 
-fn drawTraffic(catalog: VehicleCatalog, selected: usize, elapsed: f32) void {
+fn trafficVehicleCount() usize {
+    return @max(12, @as(usize, @intFromFloat(@ceil(g_length / traffic_spacing))));
+}
+
+fn drawTraffic(catalog: VehicleCatalog, selected: usize, elapsed: f32, viewer_position: Vec2) void {
+    const traffic_count = trafficVehicleCount();
+    const cull_distance_sq = traffic_draw_distance * traffic_draw_distance;
     var i: usize = 0;
-    while (i < 12) : (i += 1) {
+    while (i < traffic_count) : (i += 1) {
         const fi: f32 = @floatFromInt(i);
-        const travel = fi * (g_length / 12.0) + elapsed * (8.0 + fi * 0.5);
+        const speed_variation: f32 = @floatFromInt(i % 7);
+        const travel = fi * traffic_spacing + elapsed * (14.0 + speed_variation * 1.1);
         const phase = if (g_route_closed) @mod(travel, g_length) else @mod(travel, g_length * 2.0);
         const reverse = !g_route_closed and phase > g_length;
         const d = if (reverse) g_length * 2.0 - phase else phase;
         const sp = sampleSpline(g_spline, d);
         const lane: f32 = if (i % 2 == 0) -2.5 else 2.5;
         const pos = add(sp.pos, scale(sp.normal, lane));
+        const dx = pos.x - viewer_position.x;
+        const dz = pos.z - viewer_position.z;
+        if (dx * dx + dz * dz > cull_distance_sq) continue;
         const reverse_yaw: f32 = if (reverse) std.math.pi else 0.0;
         const yaw = std.math.atan2(sp.tangent.x, sp.tangent.z) + reverse_yaw;
         var vehicle_index = i % (catalog.models.len - 1);
@@ -1704,10 +1720,11 @@ fn drawMinimap(car: Car) void {
     }
 
     // Traffic dots
+    const traffic_count = trafficVehicleCount();
     var t: usize = 0;
-    while (t < 12) : (t += 1) {
+    while (t < traffic_count) : (t += 1) {
         const fi: f32 = @floatFromInt(t);
-        const d = @mod(fi * (g_length / 12.0), g_length);
+        const d = @mod(fi * traffic_spacing, g_length);
         const sp = sampleSpline(g_spline, d);
         const tp = worldToMinimap(sp.pos.x, sp.pos.z, mx, my, half);
         rl.drawPixelV(tp, color(180, 180, 60, 200));
@@ -1771,6 +1788,10 @@ pub fn main() !void {
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true });
     rl.initWindow(screen_width, screen_height, "ASA MADE");
     defer rl.closeWindow();
+    if (rl.loadImageFromMemory(".png", embedded_assets.icon_png)) |icon| {
+        rl.setWindowIcon(icon);
+        rl.unloadImage(icon);
+    } else |_| {}
     rl.setLoadFileDataCallback(loadEmbeddedFile);
     rl.setTargetFPS(60);
     rl.gl.rlSetClipPlanes(0.05, 4000.0);
@@ -2010,10 +2031,11 @@ pub fn main() !void {
                 for (g_facade_meshes, g_facade_mats) |mesh, material| rl.drawMesh(mesh, material, identity);
                 rl.drawMesh(g_road_mesh, g_road_mat, identity);
                 rl.drawMesh(g_barrier_mesh, g_barrier_mat, identity);
-                drawLamps(car.position);
+                drawLamps(car.position, false);
                 vehicle_catalog.setLightBoost(1.0);
-                drawTraffic(vehicle_catalog, selected_vehicle, elapsed);
+                drawTraffic(vehicle_catalog, selected_vehicle, elapsed, car.position);
                 drawPlayerCar(vehicle_catalog, selected_vehicle, car.position, car.yaw);
+                drawLamps(car.position, true);
                 camera.end();
 
                 const screen_h = rl.getScreenHeight();
