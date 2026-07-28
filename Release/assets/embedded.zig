@@ -5,6 +5,7 @@ pub const loading_jpg = @embedFile("loading.jpg");
 pub const title_jpg = @embedFile("title.jpg");
 pub const icon_png = @embedFile("icon.png");
 pub const logo_glb = @embedFile("logo.glb");
+pub const zeppelin_glb = @embedFile("zeppelin.glb");
 
 pub const city_ground_jpg = @embedFile("tex/city-ground.jpg");
 pub const tarmac_jpg = @embedFile("tex/tarmac.jpg");

@@ -281,6 +281,7 @@ fn embeddedFile(path: []const u8) ?[]const u8 {
         .{ .path = "assets/loading.jpg", .data = embedded_assets.loading_jpg },
         .{ .path = "assets/title.jpg", .data = embedded_assets.title_jpg },
         .{ .path = "assets/logo.glb", .data = embedded_assets.logo_glb },
+        .{ .path = "assets/zeppelin.glb", .data = embedded_assets.zeppelin_glb },
         .{ .path = "assets/tex/city-ground.jpg", .data = embedded_assets.city_ground_jpg },
         .{ .path = "assets/tex/tarmac.jpg", .data = embedded_assets.tarmac_jpg },
         .{ .path = "assets/tex/barrier.jpg", .data = embedded_assets.barrier_jpg },
@@ -1071,7 +1072,7 @@ const LogoModel = struct {
 
         const bounds = rl.getModelBoundingBox(model);
         const width = @max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y);
-        return .{ .model = model, .shader = shader, .bounds = bounds, .scale = 5.2 / width };
+        return .{ .model = model, .shader = shader, .bounds = bounds, .scale = 2.6 / width };
     }
 
     fn unload(self: LogoModel) void {
@@ -1096,6 +1097,48 @@ const LogoModel = struct {
                 .x = -rx * self.scale,
                 .y = @sin(elapsed * 0.9) * 0.035 - cy * self.scale,
                 .z = -rz * self.scale,
+            },
+            .{ .x = 0, .y = 1, .z = 0 },
+            yaw,
+            .{ .x = self.scale, .y = self.scale, .z = self.scale },
+            color(255, 255, 255, 255),
+        );
+    }
+};
+
+const ZeppelinModel = struct {
+    model: rl.Model,
+    bounds: rl.BoundingBox,
+    scale: f32,
+
+    fn init() !ZeppelinModel {
+        const model = try rl.loadModel("assets/zeppelin.glb");
+        const bounds = rl.getModelBoundingBox(model);
+        const width = bounds.max.x - bounds.min.x;
+        const height = bounds.max.y - bounds.min.y;
+        const depth = bounds.max.z - bounds.min.z;
+        const longest_side = @max(width, @max(height, depth));
+        return .{ .model = model, .bounds = bounds, .scale = 36.0 / longest_side };
+    }
+
+    fn unload(self: ZeppelinModel) void {
+        self.model.unload();
+    }
+
+    fn drawAtTrackStart(self: ZeppelinModel) void {
+        const start = g_spline[0];
+        const yaw_rad = std.math.atan2(start.tangent.x, start.tangent.z);
+        const yaw = yaw_rad * 180.0 / std.math.pi;
+        const cx = (self.bounds.min.x + self.bounds.max.x) * 0.5;
+        const cy = (self.bounds.min.y + self.bounds.max.y) * 0.5;
+        const cz = (self.bounds.min.z + self.bounds.max.z) * 0.5;
+        const rx = cx * @cos(yaw_rad) + cz * @sin(yaw_rad);
+        const rz = -cx * @sin(yaw_rad) + cz * @cos(yaw_rad);
+        self.model.drawEx(
+            .{
+                .x = start.pos.x - rx * self.scale,
+                .y = road_y + 32.0 - cy * self.scale,
+                .z = start.pos.z - rz * self.scale,
             },
             .{ .x = 0, .y = 1, .z = 0 },
             yaw,
@@ -1868,6 +1911,9 @@ pub fn main() !void {
     drawLoading("LOADING LOGO");
     const logo_model = try LogoModel.init();
     defer logo_model.unload();
+    drawLoading("LOADING ZEPPELIN");
+    const zeppelin_model = try ZeppelinModel.init();
+    defer zeppelin_model.unload();
     const vehicle_catalog = try VehicleCatalog.init();
     defer vehicle_catalog.unload();
 
@@ -2031,6 +2077,7 @@ pub fn main() !void {
                 for (g_facade_meshes, g_facade_mats) |mesh, material| rl.drawMesh(mesh, material, identity);
                 rl.drawMesh(g_road_mesh, g_road_mat, identity);
                 rl.drawMesh(g_barrier_mesh, g_barrier_mat, identity);
+                zeppelin_model.drawAtTrackStart();
                 drawLamps(car.position, false);
                 vehicle_catalog.setLightBoost(1.0);
                 drawTraffic(vehicle_catalog, selected_vehicle, elapsed, car.position);
