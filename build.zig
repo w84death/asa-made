@@ -137,8 +137,21 @@ fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget,
         .target = target,
         .optimize = optimize,
     });
+    const wheel_driver_mod = b.createModule(.{
+        .root_source_file = b.path("src/wheel_driver.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const car_physics_mod = b.createModule(.{
+        .root_source_file = b.path("src/car_physics.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     exe_mod.addImport("raylib", raylib_zig_mod);
     exe_mod.addImport("embedded_assets", embedded_assets_mod);
+    exe_mod.addImport("wheel_driver", wheel_driver_mod);
+    exe_mod.addImport("car_physics", car_physics_mod);
     exe_mod.linkLibrary(raylib_lib);
     linkPlatformLibs(exe_mod, os_tag);
 

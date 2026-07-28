@@ -1,177 +1,14 @@
 const std = @import("std");
 const rl = @import("raylib");
 const embedded_assets = @import("embedded_assets");
-const builtin = @import("builtin");
-const target_is_linux = builtin.os.tag == .linux;
-
-// === Linux input headers ===
-const jsy = if (target_is_linux) @cImport({
-    @cInclude("fcntl.h");
-    @cInclude("unistd.h");
-}) else struct {};
-const ev = if (target_is_linux) @cImport({
-    @cInclude("sys/ioctl.h");
-    @cInclude("linux/input.h");
-}) else struct {};
-
-const JS_EVENT_AXIS: u8 = 0x02;
-const JS_EVENT_BUTTON: u8 = 0x01;
-const JS_EVENT_INIT: u8 = 0x80;
-
-const JsEvent = extern struct {
-    time: u32,
-    value: i16,
-    type: u8,
-    number: u8,
-};
-
-const Wheel = struct {
-    fd: c_int = -1,
-    axes: [8]f32 = .{0} ** 8,
-    buttons: [32]bool = .{false} ** 32,
-    available: bool = false,
-
-    fn init() Wheel {
-        if (comptime !target_is_linux) return .{};
-        const fd = jsy.open("/dev/input/js0", jsy.O_RDONLY | jsy.O_NONBLOCK);
-        return .{ .fd = fd, .available = fd >= 0 };
-    }
-
-    fn deinit(self: *Wheel) void {
-        if (comptime !target_is_linux) return;
-        if (self.available) _ = jsy.close(self.fd);
-    }
-
-    fn poll(self: *Wheel) void {
-        if (comptime !target_is_linux) return;
-        if (!self.available) return;
-        var event: JsEvent = undefined;
-        const sz: usize = @sizeOf(JsEvent);
-        while (true) {
-            const n = jsy.read(self.fd, &event, sz);
-            if (n != sz) break;
-            if (event.type & JS_EVENT_AXIS != 0) {
-                if (event.number < 8) self.axes[event.number] = @as(f32, @floatFromInt(event.value)) / 32767.0;
-            } else if (event.type & JS_EVENT_BUTTON != 0) {
-                if (event.number < 32) self.buttons[event.number] = event.value != 0;
-            }
-        }
-    }
-
-    fn steering(self: Wheel) f32 {
-        return self.axes[0];
-    }
-
-    fn throttle(self: Wheel) f32 {
-        return std.math.clamp((1.0 - self.axes[1]) * 0.5, 0.0, 1.0);
-    }
-
-    fn brake(self: Wheel) f32 {
-        return std.math.clamp((1.0 - self.axes[2]) * 0.5, 0.0, 1.0);
-    }
-};
+const wheel_driver = @import("wheel_driver");
+const car_physics = @import("car_physics");
+const Wheel = wheel_driver.Wheel;
+const ForceFeedback = wheel_driver.ForceFeedback;
+const Car = car_physics.Car;
+const Controls = car_physics.Controls;
 
 var g_wheel: Wheel = .{};
-
-// === Force feedback via evdev (Logitech DFP: CONSTANT + AUTOCENTER + GAIN) ===
-const EVIOCSFF: c_ulong = 0x40304580;
-const EVIOCRMFF: c_ulong = 0x40044581;
-const FF_CONSTANT: u16 = 0x52;
-const FF_GAIN: u16 = 0x60;
-const FF_AUTOCENTER: u16 = 0x61;
-const EV_FF: u16 = 0x15;
-const FfEffect = if (target_is_linux) ev.struct_ff_effect else u8;
-
-const ForceFeedback = struct {
-    fd: c_int = -1,
-    available: bool = false,
-    effect: FfEffect = std.mem.zeroes(FfEffect),
-    collision_force: f32 = 0,
-
-    fn init() ForceFeedback {
-        if (comptime !target_is_linux) return .{};
-        var self = ForceFeedback{};
-
-        // Scan for evdev device with FF support (EV_FF = bit 21)
-        var i: c_int = 0;
-        while (i < 32) : (i += 1) {
-            var path_buf: [64]u8 = undefined;
-            const path = std.fmt.bufPrintZ(&path_buf, "/dev/input/event{d}", .{i}) catch continue;
-            const fd = jsy.open(path.ptr, jsy.O_RDWR);
-            if (fd < 0) continue;
-
-            var evbits: [4]u8 = .{0} ** 4;
-            const EVIOCGBIT0: c_ulong = 0x80044520; // EVIOCGBIT(0, 4)
-            _ = ev.ioctl(fd, EVIOCGBIT0, &evbits);
-            if (evbits[2] & (@as(u8, 1) << 5) != 0) { // bit 21 = byte 2 bit 5
-                self.fd = fd;
-                self.available = true;
-                break;
-            }
-            _ = jsy.close(fd);
-        }
-        if (!self.available) return self;
-
-        // Set master gain to max
-        self.writeFF(FF_GAIN, 0xFFFF);
-
-        // Set autocenter spring (moderate)
-        self.writeFF(FF_AUTOCENTER, 0x5000);
-
-        // Upload a continuous constant effect for road vibration + collision
-        self.effect.type = FF_CONSTANT;
-        self.effect.id = -1;
-        self.effect.replay.length = 0; // infinite
-        self.effect.u.constant.level = 0;
-        _ = ev.ioctl(self.fd, EVIOCSFF, &self.effect);
-        self.writeFF(EV_FF, 1); // play
-
-        return self;
-    }
-
-    fn deinit(self: *ForceFeedback) void {
-        if (comptime !target_is_linux) return;
-        if (!self.available) return;
-        self.writeFF(EV_FF, 0); // stop constant
-        if (self.effect.id >= 0) _ = ev.ioctl(self.fd, EVIOCRMFF, self.effect.id);
-        self.writeFF(FF_AUTOCENTER, 0); // disable spring
-        _ = jsy.close(self.fd);
-    }
-
-    fn writeFF(self: ForceFeedback, code: u16, value: i32) void {
-        if (comptime !target_is_linux) return;
-        var ie: ev.struct_input_event = std.mem.zeroes(ev.struct_input_event);
-        ie.type = EV_FF;
-        ie.code = if (self.effect.id >= 0 and code == EV_FF) @intCast(self.effect.id) else code;
-        ie.value = value;
-        _ = jsy.write(self.fd, &ie, @sizeOf(ev.struct_input_event));
-    }
-
-    fn update(self: *ForceFeedback, speed: f32, time: f32, collided: bool) void {
-        if (comptime !target_is_linux) return;
-        if (!self.available) return;
-
-        var level: f32 = 0;
-
-        // Road surface vibration — proportional to speed
-        const sf = std.math.clamp(@abs(speed) / 50.0, 0.0, 1.0);
-        if (sf > 0.05) {
-            const rumble = @sin(time * 65.0) * sf * 3000.0;
-            const hash_noise: f32 = @sin(time * 999.7) * 5.0;
-            level += rumble + hash_noise * sf * 300.0;
-        }
-
-        // Collision impact — strong decaying pulse
-        if (collided) self.collision_force = 28000.0;
-        self.collision_force *= 0.80;
-        if (self.collision_force > 1.0) level += self.collision_force;
-
-        // Upload updated constant
-        self.effect.u.constant.level = @intFromFloat(std.math.clamp(level, -32767.0, 32767.0));
-        _ = ev.ioctl(self.fd, EVIOCSFF, &self.effect);
-    }
-};
-
 var g_ff: ForceFeedback = .{};
 
 // === Config ===
@@ -183,8 +20,7 @@ const spline_spacing: f32 = 3.0;
 const collision_spacing: f32 = 12.0;
 const building_cull_dist: f32 = 65.0;
 const lamp_interval: f32 = 50.0;
-const civic_top_speed: f32 = 56.0;
-const civic_reverse_speed: f32 = 12.0;
+const civic_top_speed = car_physics.civic_config.top_speed;
 const tau: f32 = std.math.pi * 2.0;
 
 // === Shaders ===
@@ -405,23 +241,11 @@ const post_fs =
 ;
 
 // === Math ===
-const Vec2 = struct { x: f32, z: f32 };
-
-fn add(a: Vec2, b: Vec2) Vec2 {
-    return .{ .x = a.x + b.x, .z = a.z + b.z };
-}
-
-fn scale(v: Vec2, s: f32) Vec2 {
-    return .{ .x = v.x * s, .z = v.z * s };
-}
-
-fn dot(a: Vec2, b: Vec2) f32 {
-    return a.x * b.x + a.z * b.z;
-}
-
-fn vecLength(v: Vec2) f32 {
-    return @sqrt(dot(v, v));
-}
+const Vec2 = car_physics.Vec2;
+const add = car_physics.add;
+const scale = car_physics.scale;
+const dot = car_physics.dot;
+const vecLength = car_physics.length;
 
 fn v3(v: Vec2, y: f32) rl.Vector3 {
     return .{ .x = v.x, .y = y, .z = v.z };
@@ -1001,138 +825,69 @@ fn bakeBuildingMesh() !void {
 }
 
 // === Car physics ===
-const Car = struct {
-    position: Vec2 = .{ .x = 0, .z = 0 },
-    velocity: Vec2 = .{ .x = 0, .z = 0 },
-    yaw: f32 = 0,
-    yaw_rate: f32 = 0,
-    speed: f32 = 0,
-    steer_visual: f32 = 0,
-    drift_amount: f32 = 0,
-    collided: bool = false,
+fn readControls() Controls {
+    var controls = Controls{
+        .throttle = if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) 1.0 else 0.0,
+        .brake = if (rl.isKeyDown(.s) or rl.isKeyDown(.down)) 1.0 else 0.0,
+        .handbrake = rl.isKeyDown(.space),
+    };
+    if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) controls.steer += 1.0;
+    if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) controls.steer -= 1.0;
 
-    fn reset(self: *Car) void {
-        const start = g_spline[0];
-        self.position = start.pos;
-        self.velocity = .{ .x = 0, .z = 0 };
-        self.yaw = std.math.atan2(start.tangent.x, start.tangent.z);
-        self.yaw_rate = 0;
-        self.speed = 0;
-        self.steer_visual = 0;
-        self.drift_amount = 0;
+    if (g_wheel.available) {
+        const raw_steer = g_wheel.steering();
+        if (@abs(raw_steer) > 0.02) {
+            const sign: f32 = if (raw_steer > 0) 1.0 else -1.0;
+            controls.steer = -sign * std.math.pow(f32, @abs(raw_steer), 0.65) * 1.3;
+        }
+        const wheel_throttle = g_wheel.throttle();
+        const wheel_brake = g_wheel.brake();
+        if (wheel_throttle > 0.04) controls.throttle = wheel_throttle;
+        if (wheel_brake > 0.04) controls.brake = wheel_brake;
+        if (g_wheel.buttons[0]) controls.handbrake = true;
     }
+    return controls;
+}
 
-    fn update(self: *Car, dt: f32, vehicle_half_width: f32) void {
-        // Keyboard input
-        const kb_throttle: f32 = if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) 1.0 else 0.0;
-        const kb_brake: f32 = if (rl.isKeyDown(.s) or rl.isKeyDown(.down)) 1.0 else 0.0;
-        var kb_steer: f32 = 0.0;
-        if (rl.isKeyDown(.a) or rl.isKeyDown(.left)) kb_steer += 1.0;
-        if (rl.isKeyDown(.d) or rl.isKeyDown(.right)) kb_steer -= 1.0;
-        const kb_handbrake = rl.isKeyDown(.space);
+fn resetCar(car: *Car) void {
+    const start = g_spline[0];
+    car.reset(start.pos, std.math.atan2(start.tangent.x, start.tangent.z));
+}
 
-        // Combine with wheel input (overrides keyboard when active)
-        var throttle = kb_throttle;
-        var brake = kb_brake;
-        var steer = kb_steer;
-        var handbrake = kb_handbrake;
-
-        if (g_wheel.available) {
-            const raw_steer = g_wheel.steering();
-            if (@abs(raw_steer) > 0.02) {
-                // Non-linear curve: more responsive near center, full lock at edges
-                const abs_s = @abs(raw_steer);
-                const sign: f32 = if (raw_steer > 0) 1.0 else -1.0;
-                steer = -sign * std.math.pow(f32, abs_s, 0.65) * 1.3;
+fn constrainCarToTrack(car: *Car, vehicle_half_width: f32) void {
+    const forward = Vec2{ .x = @sin(car.yaw), .z = @cos(car.yaw) };
+    const nearest = nearestTrack(car.position);
+    const lateral = dot(.{ .x = car.position.x - nearest.center.x, .z = car.position.z - nearest.center.z }, nearest.normal);
+    const limit = road_half_width - vehicle_half_width;
+    if (@abs(lateral) > limit) {
+        const excess = lateral - std.math.clamp(lateral, -limit, limit);
+        car.position.x -= nearest.normal.x * excess;
+        car.position.z -= nearest.normal.z * excess;
+        const normal_speed = dot(car.velocity, nearest.normal);
+        if (normal_speed * lateral > 0.0) car.velocity = add(car.velocity, scale(nearest.normal, -normal_speed * 1.25));
+        car.velocity = scale(car.velocity, 0.76);
+        car.collided = true;
+        car.speed = dot(car.velocity, forward);
+    }
+    if (!g_route_closed) {
+        const endpoint_margin: f32 = 2.2;
+        const along = dot(.{ .x = car.position.x - nearest.center.x, .z = car.position.z - nearest.center.z }, nearest.tangent);
+        const route_distance = nearest.dist + along;
+        const beyond_start = nearest.dist < collision_spacing and route_distance < endpoint_margin;
+        const beyond_end = nearest.dist > g_length - collision_spacing and route_distance > g_length - endpoint_margin;
+        if (beyond_start or beyond_end) {
+            const correction = if (beyond_start) endpoint_margin - route_distance else g_length - endpoint_margin - route_distance;
+            car.position = add(car.position, scale(nearest.tangent, correction));
+            const endpoint_speed = dot(car.velocity, nearest.tangent);
+            if ((beyond_start and endpoint_speed < 0.0) or (beyond_end and endpoint_speed > 0.0)) {
+                car.velocity = add(car.velocity, scale(nearest.tangent, -endpoint_speed * 1.25));
+                car.velocity = scale(car.velocity, 0.76);
             }
-
-            const wheel_throttle = g_wheel.throttle();
-            const wheel_brake = g_wheel.brake();
-            if (wheel_throttle > 0.04) throttle = wheel_throttle;
-            if (wheel_brake > 0.04) brake = wheel_brake;
-
-            // Button 0 = handbrake, Button 2 = reset
-            if (g_wheel.buttons[0]) handbrake = true;
-        }
-
-        var forward = Vec2{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
-        var right = Vec2{ .x = @cos(self.yaw), .z = -@sin(self.yaw) };
-        var long_speed = dot(self.velocity, forward);
-        var lat_speed = dot(self.velocity, right);
-
-        if (throttle > 0.0) {
-            const speed_ratio = std.math.clamp(@abs(long_speed) / civic_top_speed, 0.0, 1.0);
-            const power_falloff = 1.0 - std.math.pow(f32, speed_ratio, 2.2);
-            self.velocity = add(self.velocity, scale(forward, 4.0 * power_falloff * dt));
-        }
-        if (brake > 0.0) {
-            const force: f32 = if (long_speed > 1.0) -11.5 else if (long_speed > -civic_reverse_speed) -4.0 else 0.0;
-            self.velocity = add(self.velocity, scale(forward, force * dt));
-        }
-
-        const speed_factor = std.math.clamp(@abs(long_speed) / 14.0, 0.0, 1.0);
-        const rev: f32 = if (long_speed < -0.5) -1.0 else 1.0;
-        const steer_rate: f32 = if (handbrake) 1.72 else 1.18;
-        const target_yaw_rate = steer * steer_rate * speed_factor * rev;
-        const yaw_resp: f32 = if (handbrake) 7.5 else 5.0;
-        self.yaw_rate += (target_yaw_rate - self.yaw_rate) * std.math.clamp(yaw_resp * dt, 0.0, 1.0);
-        if (handbrake and @abs(long_speed) > 18.0) self.yaw_rate += steer * 1.25 * dt * rev;
-        if (@abs(steer) < 0.05) self.yaw_rate *= std.math.clamp(1.0 - 3.2 * dt, 0.0, 1.0);
-        self.yaw += self.yaw_rate * dt;
-
-        forward = .{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
-        right = .{ .x = @cos(self.yaw), .z = -@sin(self.yaw) };
-        long_speed = dot(self.velocity, forward);
-        lat_speed = dot(self.velocity, right);
-        var grip: f32 = if (handbrake) 0.72 else 6.8;
-        if (!handbrake and throttle > 0.0 and @abs(lat_speed) > 4.5 and @abs(long_speed) > 24.0) grip = 2.7;
-        self.velocity = add(self.velocity, scale(right, -lat_speed * std.math.clamp(grip * dt, 0.0, 1.0)));
-
-        const drag: f32 = if (handbrake) 0.52 else 0.0035;
-        self.velocity = scale(self.velocity, std.math.clamp(1.0 - drag * dt, 0.0, 1.0));
-        const vl = vecLength(self.velocity);
-        if (vl > civic_top_speed) self.velocity = scale(self.velocity, civic_top_speed / vl);
-
-        self.position = add(self.position, scale(self.velocity, dt));
-        self.speed = dot(self.velocity, forward);
-        const drift_t = std.math.clamp(@abs(dot(self.velocity, right)) / 15.0, 0.0, 1.0) * speed_factor;
-        self.drift_amount += (drift_t - self.drift_amount) * std.math.clamp(dt * 7.0, 0.0, 1.0);
-        self.steer_visual += (steer - self.steer_visual) * std.math.clamp(dt * 9.0, 0.0, 1.0);
-
-        const nearest = nearestTrack(self.position);
-        const lateral = dot(.{ .x = self.position.x - nearest.center.x, .z = self.position.z - nearest.center.z }, nearest.normal);
-        const limit = road_half_width - vehicle_half_width;
-        self.collided = false;
-        if (@abs(lateral) > limit) {
-            const excess = lateral - std.math.clamp(lateral, -limit, limit);
-            self.position.x -= nearest.normal.x * excess;
-            self.position.z -= nearest.normal.z * excess;
-            const ns = dot(self.velocity, nearest.normal);
-            if (ns * lateral > 0.0) self.velocity = add(self.velocity, scale(nearest.normal, -ns * 1.25));
-            self.velocity = scale(self.velocity, 0.76);
-            self.collided = true;
-            self.speed = dot(self.velocity, forward);
-        }
-        if (!g_route_closed) {
-            const endpoint_margin: f32 = 2.2;
-            const along = dot(.{ .x = self.position.x - nearest.center.x, .z = self.position.z - nearest.center.z }, nearest.tangent);
-            const route_distance = nearest.dist + along;
-            const beyond_start = nearest.dist < collision_spacing and route_distance < endpoint_margin;
-            const beyond_end = nearest.dist > g_length - collision_spacing and route_distance > g_length - endpoint_margin;
-            if (beyond_start or beyond_end) {
-                const correction = if (beyond_start) endpoint_margin - route_distance else g_length - endpoint_margin - route_distance;
-                self.position = add(self.position, scale(nearest.tangent, correction));
-                const endpoint_speed = dot(self.velocity, nearest.tangent);
-                if ((beyond_start and endpoint_speed < 0.0) or (beyond_end and endpoint_speed > 0.0)) {
-                    self.velocity = add(self.velocity, scale(nearest.tangent, -endpoint_speed * 1.25));
-                    self.velocity = scale(self.velocity, 0.76);
-                }
-                self.collided = true;
-                self.speed = dot(self.velocity, forward);
-            }
+            car.collided = true;
+            car.speed = dot(car.velocity, forward);
         }
     }
-};
+}
 
 // === Camera ===
 const CameraRig = struct {
@@ -2205,11 +1960,12 @@ pub fn main() !void {
                 if (rl.isKeyPressed(.c)) cam_mode = if (cam_mode == 0) 1 else 0;
                 updateRadioControls();
                 if (rl.isKeyPressed(.r) or (g_wheel.available and g_wheel.buttons[2])) {
-                    car.reset();
+                    resetCar(&car);
                     camera_rig.reset(car);
                 }
                 const selected_model = vehicle_catalog.models[selected_vehicle];
-                car.update(dt, selected_model.width * 0.5);
+                car.update(dt, readControls(), car_physics.civic_config);
+                constrainCarToTrack(&car, selected_model.width * 0.5);
                 g_ff.update(car.speed, elapsed, car.collided);
 
                 const camera = switch (cam_mode) {
