@@ -1,6 +1,68 @@
 const std = @import("std");
 const rl = @import("raylib");
 
+// === Linux joystick direct access ===
+const jsy = @cImport({
+    @cInclude("fcntl.h");
+    @cInclude("unistd.h");
+});
+
+const JS_EVENT_AXIS: u8 = 0x02;
+const JS_EVENT_BUTTON: u8 = 0x01;
+const JS_EVENT_INIT: u8 = 0x80;
+
+const JsEvent = extern struct {
+    time: u32,
+    value: i16,
+    @"type": u8,
+    number: u8,
+};
+
+const Wheel = struct {
+    fd: c_int = -1,
+    axes: [8]f32 = .{0} ** 8,
+    buttons: [32]bool = .{false} ** 32,
+    available: bool = false,
+
+    fn init() Wheel {
+        const fd = jsy.open("/dev/input/js0", jsy.O_RDONLY | jsy.O_NONBLOCK);
+        return .{ .fd = fd, .available = fd >= 0 };
+    }
+
+    fn deinit(self: *Wheel) void {
+        if (self.available) _ = jsy.close(self.fd);
+    }
+
+    fn poll(self: *Wheel) void {
+        if (!self.available) return;
+        var ev: JsEvent = undefined;
+        const sz: usize = @sizeOf(JsEvent);
+        while (true) {
+            const n = jsy.read(self.fd, &ev, sz);
+            if (n != sz) break;
+            if (ev.@"type" & JS_EVENT_AXIS != 0) {
+                if (ev.number < 8) self.axes[ev.number] = @as(f32, @floatFromInt(ev.value)) / 32767.0;
+            } else if (ev.@"type" & JS_EVENT_BUTTON != 0) {
+                if (ev.number < 32) self.buttons[ev.number] = ev.value != 0;
+            }
+        }
+    }
+
+    fn steering(self: Wheel) f32 {
+        return self.axes[0];
+    }
+
+    fn throttle(self: Wheel) f32 {
+        return std.math.clamp((1.0 - self.axes[1]) * 0.5, 0.0, 1.0);
+    }
+
+    fn brake(self: Wheel) f32 {
+        return std.math.clamp((1.0 - self.axes[2]) * 0.5, 0.0, 1.0);
+    }
+};
+
+var g_wheel: Wheel = .{};
+
 // === Config ===
 const screen_width = 720;
 const screen_height = 360;
@@ -525,22 +587,17 @@ const Car = struct {
         var steer = kb_steer;
         var handbrake = kb_handbrake;
 
-        if (rl.isGamepadAvailable(0) and rl.getGamepadAxisCount(0) >= 3) {
-            const raw_steer = rl.getGamepadAxisMovement(0, .left_x);
-            const raw_gas = rl.getGamepadAxisMovement(0, .left_y);
-            const raw_brake = rl.getGamepadAxisMovement(0, .right_x);
-
-            // Analog steering with dead zone
+        if (g_wheel.available) {
+            const raw_steer = g_wheel.steering();
             if (@abs(raw_steer) > 0.02) steer = raw_steer;
 
-            // Pedals: +1.0 at rest, -1.0 fully pressed
-            const wheel_throttle = std.math.clamp((1.0 - raw_gas) * 0.5, 0.0, 1.0);
-            const wheel_brake = std.math.clamp((1.0 - raw_brake) * 0.5, 0.0, 1.0);
+            const wheel_throttle = g_wheel.throttle();
+            const wheel_brake = g_wheel.brake();
             if (wheel_throttle > 0.04) throttle = wheel_throttle;
             if (wheel_brake > 0.04) brake = wheel_brake;
 
-            // Button 0 (X/Cross) = handbrake
-            if (rl.isGamepadButtonDown(0, .right_face_down)) handbrake = true;
+            // Button 0 = handbrake, Button 2 = reset
+            if (g_wheel.buttons[0]) handbrake = true;
         }
 
         var forward = Vec2{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
@@ -844,8 +901,99 @@ fn drawHud(car: Car) void {
     rl.drawText("SPEED BREAKER", 27, height - 45, 12, color(155, 174, 181, 255));
     rl.drawText("WASD/WHEEL DRIVE  SPACE HANDBRAKE  R RESET", 27, height - 21, 11, color(122, 139, 148, 255));
 
-    if (rl.isGamepadAvailable(0)) {
+    if (g_wheel.available) {
         rl.drawText("DFP CONNECTED", width - 120, height - 21, 11, color(31, 190, 217, 255));
+    }
+}
+
+fn drawDebugWheel() void {
+    const w = rl.getScreenWidth();
+    const h = rl.getScreenHeight();
+    const panel_w = 280;
+    const panel_x = w - panel_w - 8;
+    const y0: i32 = 8;
+
+    rl.drawRectangle(panel_x, y0, panel_w, h - 16, color(6, 8, 14, 220));
+    rl.drawRectangleLines(panel_x, y0, panel_w, h - 16, color(40, 50, 60, 255));
+
+    var buf: [128]u8 = undefined;
+    var y: i32 = y0 + 8;
+
+    if (!g_wheel.available) {
+        rl.drawText("NO WHEEL (/dev/input/js0)", panel_x + 8, y, 13, color(200, 80, 80, 255));
+        return;
+    }
+
+    rl.drawText("WHEEL DEBUG  [TAB close]", panel_x + 8, y, 13, color(224, 237, 239, 255));
+    y += 22;
+
+    // Raw axes
+    rl.drawText("RAW AXES", panel_x + 8, y, 11, color(66, 201, 219, 255));
+    y += 16;
+    var i: usize = 0;
+    const labels = [_][]const u8{ "steer", "gas", "brake", "hat_x", "hat_y", "a5", "a6", "a7" };
+    while (i < 8) : (i += 1) {
+        const v = g_wheel.axes[i];
+        const bar_x = panel_x + 60;
+        const bar_w = 180;
+        const center_x = bar_x + @divTrunc(bar_w, 2);
+        // Center line
+        rl.drawLine(center_x, y + 2, center_x, y + 10, color(50, 55, 65, 255));
+        // Value bar
+        const half = @divTrunc(bar_w, 2);
+        if (v >= 0) {
+            const fw: i32 = @intFromFloat(@as(f32, @floatFromInt(half)) * v);
+            rl.drawRectangle(center_x, y + 3, fw, 7, color(31, 190, 217, 255));
+        } else {
+            const fw: i32 = @intFromFloat(@as(f32, @floatFromInt(half)) * (-v));
+            rl.drawRectangle(center_x - fw, y + 3, fw, 7, color(245, 67, 104, 255));
+        }
+        const label = if (i < labels.len) labels[i] else "??";
+        const text = std.fmt.bufPrintZ(&buf, "{s:>5} {d:.3}", .{ label, v }) catch "";
+        rl.drawText(text, panel_x + 8, y + 2, 10, color(155, 174, 181, 255));
+        y += 14;
+    }
+
+    y += 6;
+
+    // Mapped controls
+    rl.drawText("MAPPED", panel_x + 8, y, 11, color(66, 201, 219, 255));
+    y += 16;
+
+    const mappings = [_]struct { name: []const u8, val: f32 }{
+        .{ .name = "steer", .val = g_wheel.steering() },
+        .{ .name = "thrtl", .val = g_wheel.throttle() },
+        .{ .name = "brake", .val = g_wheel.brake() },
+    };
+    for (mappings) |m| {
+        const bar_x = panel_x + 60;
+        const bar_w = 180;
+        const fw: i32 = @intFromFloat(@as(f32, @floatFromInt(bar_w)) * std.math.clamp(@abs(m.val), 0.0, 1.0));
+        rl.drawRectangle(bar_x, y + 3, fw, 7, color(31, 190, 217, 255));
+        const text = std.fmt.bufPrintZ(&buf, "{s:>5} {d:.3}", .{ m.name, m.val }) catch "";
+        rl.drawText(text, panel_x + 8, y + 2, 10, color(155, 174, 181, 255));
+        y += 14;
+    }
+
+    y += 6;
+
+    // Buttons
+    rl.drawText("BUTTONS", panel_x + 8, y, 11, color(66, 201, 219, 255));
+    y += 16;
+    var col: i32 = 0;
+    var btn: usize = 0;
+    while (btn < 16) : (btn += 1) {
+        const bx = panel_x + 8 + col * 34;
+        const pressed = g_wheel.buttons[btn];
+        const c = if (pressed) color(31, 190, 217, 255) else color(40, 45, 55, 255);
+        rl.drawRectangle(bx, y, 30, 18, c);
+        const text = std.fmt.bufPrintZ(&buf, "{d}", .{btn}) catch "";
+        rl.drawText(text, bx + 10, y + 3, 10, if (pressed) color(6, 8, 14, 255) else color(100, 110, 120, 255));
+        col += 1;
+        if (col >= 7) {
+            col = 0;
+            y += 22;
+        }
     }
 }
 
@@ -930,13 +1078,20 @@ pub fn main() !void {
     var car = Car{ .position = start.pos, .yaw = std.math.atan2(start.tangent.x, start.tangent.z) };
     var camera_rig = CameraRig{ .anchor = start.pos, .yaw = car.yaw };
     var elapsed: f32 = 0;
+    var show_debug = false;
+
+    g_wheel = Wheel.init();
+    defer g_wheel.deinit();
 
     const identity = rl.Matrix.identity();
 
     while (!rl.windowShouldClose()) {
         const dt = @min(rl.getFrameTime(), 1.0 / 30.0);
         elapsed += dt;
-        if (rl.isKeyPressed(.r) or rl.isGamepadButtonPressed(0, .middle)) {
+        g_wheel.poll();
+
+        if (rl.isKeyPressed(.tab)) show_debug = !show_debug;
+        if (rl.isKeyPressed(.r) or (g_wheel.available and g_wheel.buttons[2])) {
             car.reset();
             camera_rig.reset(car);
         }
@@ -949,20 +1104,18 @@ pub fn main() !void {
         rl.drawRectangleGradientV(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), color(3, 5, 5, 255), color(20, 14, 8, 255));
 
         camera.begin();
-        // Ground
         rl.drawPlane(.{ .x = 0, .y = 0, .z = 0 }, .{ .x = 3000, .y = 3000 }, color(8, 7, 5, 255));
-        // Baked static meshes
         rl.drawMesh(g_bldg_mesh, g_bldg_mat, identity);
         rl.drawMesh(g_road_mesh, g_road_mat, identity);
         rl.beginBlendMode(.alpha);
         rl.drawMesh(g_pool_mesh, g_pool_mat, identity);
         rl.endBlendMode();
-        // Dynamic props
         drawLamps(car.position);
         drawTraffic(elapsed);
         drawPlayerCar(player_model, car.position, car.yaw);
         camera.end();
 
         drawHud(car);
+        if (show_debug) drawDebugWheel();
     }
 }
