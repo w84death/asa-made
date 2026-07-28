@@ -1154,17 +1154,18 @@ fn drawLoading(stage: [:0]const u8) void {
 
 // === Map system ===
 const MapEntry = struct {
-    name: []const u8,
-    desc: []const u8,
+    name: [:0]const u8,
+    desc: [:0]const u8,
     available: bool,
     json: []const u8,
 };
 
 const osaka_json = @embedFile("loop_scene.json");
+const poznan_json = @embedFile("poznan.json");
 
 const maps = [_]MapEntry{
     .{ .name = "OSAKA", .desc = "Hanshin Expressway Loop", .available = true, .json = osaka_json },
-    .{ .name = "POZNAN", .desc = "Poznan, Poland", .available = false, .json = "" },
+    .{ .name = "POZNAN", .desc = "Poznan City Loop", .available = true, .json = poznan_json },
 };
 
 var g_map_loaded = false;
@@ -1197,75 +1198,6 @@ fn endMap() void {
     g_map_loaded = false;
 }
 
-// === Menu ===
-var g_menu_anim: f32 = 0;
-
-fn drawMenu(sel: i32) void {
-    g_menu_anim += 0.04;
-
-    rl.beginDrawing();
-    defer rl.endDrawing();
-    rl.clearBackground(color(4, 4, 3, 255));
-
-    // Title background (cover-fit)
-    const img_w: f32 = @floatFromInt(g_title_tex.width);
-    const img_h: f32 = @floatFromInt(g_title_tex.height);
-    const scr_w: f32 = @floatFromInt(screen_width);
-    const scr_h: f32 = @floatFromInt(screen_height);
-    const cs = @max(scr_w / img_w, scr_h / img_h);
-    const dw = img_w * cs;
-    const dh = img_h * cs;
-    rl.drawTexturePro(
-        g_title_tex,
-        .{ .x = 0, .y = 0, .width = img_w, .height = img_h },
-        .{ .x = (scr_w - dw) * 0.5, .y = (scr_h - dh) * 0.5, .width = dw, .height = dh },
-        .{ .x = 0, .y = 0 },
-        0,
-        color(255, 255, 255, 255),
-    );
-    rl.drawRectangle(0, 0, screen_width, screen_height, color(4, 6, 10, 160));
-
-    const cx = screen_width / 2;
-
-    // Title
-    rl.drawText("ASA MADE", cx - 90, 30, 30, color(224, 237, 239, 255));
-
-    // Menu items
-    const items = [_][:0]const u8{ "OSAKA", "POZNAN", "EXIT" };
-    const descs = [_][:0]const u8{ "Hanshin Expressway Loop", "Poznan, Poland", "" };
-    const start_y = screen_height / 2 - 50;
-    var i: i32 = 0;
-    while (i < 3) : (i += 1) {
-        const y = start_y + i * 44;
-        const is_sel = i == sel;
-        const available = i < 2 and maps[@intCast(i)].available;
-        const is_exit = i == 2;
-
-        // Selection bar
-        if (is_sel) {
-            const pulse: f32 = 0.6 + 0.4 * @sin(g_menu_anim * 4.0);
-            rl.drawRectangle(cx - 130, y - 4, 260, 32, color(31, 190, 217, @intFromFloat(40.0 * pulse)));
-            rl.drawRectangleLines(cx - 130, y - 4, 260, 32, color(31, 190, 217, 200));
-        }
-
-        // Item text
-        const text_color = if (!available and !is_exit) color(80, 80, 80, 255) else if (is_sel) color(31, 190, 217, 255) else color(200, 210, 215, 255);
-        const text = items[@intCast(i)];
-        const text_w = rl.measureText(text, 20);
-        rl.drawText(text, cx - @divTrunc(text_w, 2), y, 20, text_color);
-
-        // Description
-        if (is_sel and descs[@intCast(i)].len > 0) {
-            const desc = if (available) descs[@intCast(i)] else "Coming Soon";
-            const dw2 = rl.measureText(desc, 11);
-            rl.drawText(desc, cx - @divTrunc(dw2, 2), y + 24, 11, color(120, 130, 140, 255));
-        }
-    }
-
-    // Controls hint
-    rl.drawText("UP/DOWN SELECT   ENTER START   ESC EXIT", cx - 140, screen_height - 24, 11, color(90, 100, 110, 255));
-}
-
 // === Main ===
 pub fn main() !void {
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true });
@@ -1290,9 +1222,10 @@ pub fn main() !void {
 
     const identity = rl.Matrix.identity();
 
-    // State
-    var state: u8 = 0; // 0=menu, 1=playing
+    // State: 0=title, 1=car_select, 2=map_select, 3=playing
+    var state: u8 = 0;
     var menu_sel: i32 = 0;
+    var garage_yaw: f32 = 0;
     var car = Car{};
     var camera_rig = CameraRig{};
     var elapsed: f32 = 0;
@@ -1305,89 +1238,263 @@ pub fn main() !void {
         const dt = @min(rl.getFrameTime(), 1.0 / 30.0);
         elapsed += dt;
         g_wheel.poll();
+        garage_yaw += dt * 0.6;
 
-        if (state == 0) {
-            // === MENU ===
-            if (rl.isKeyPressed(.up)) menu_sel = @mod(menu_sel + 2, 3);
-            if (rl.isKeyPressed(.down)) menu_sel = @mod(menu_sel + 1, 3);
-            if (rl.isKeyPressed(.escape)) break :main_loop;
-
-            if (rl.isKeyPressed(.enter) or rl.isKeyPressed(.space)) {
-                if (menu_sel == 2) break :main_loop;
-                if (menu_sel == 0) {
-                    try startMap(0);
-                    const start = g_spline[0];
-                    car = Car{ .position = start.pos, .yaw = std.math.atan2(start.tangent.x, start.tangent.z) };
-                    camera_rig = CameraRig{ .anchor = start.pos, .yaw = car.yaw };
-                    elapsed = 0;
+        switch (state) {
+            0 => {
+                // === TITLE ===
+                if (rl.isKeyPressed(.escape)) break :main_loop;
+                if (rl.isKeyPressed(.enter) or rl.isKeyPressed(.space) or
+                    (g_wheel.available and (g_wheel.buttons[0] or g_wheel.buttons[1])))
+                {
                     state = 1;
                 }
-            }
+                drawTitleScreen(elapsed);
+            },
+            1 => {
+                // === CAR SELECT ===
+                if (rl.isKeyPressed(.escape)) {
+                    state = 0;
+                } else if (rl.isKeyPressed(.enter) or rl.isKeyPressed(.space) or
+                    (g_wheel.available and g_wheel.buttons[0]))
+                {
+                    state = 2;
+                    menu_sel = 0;
+                }
+                drawCarSelect(player_model, garage_yaw, elapsed);
+            },
+            2 => {
+                // === MAP SELECT ===
+                if (rl.isKeyPressed(.escape)) {
+                    state = 1;
+                } else if (rl.isKeyPressed(.up)) {
+                    menu_sel = @mod(menu_sel + @as(i32, @intCast(maps.len)) - 1, @as(i32, @intCast(maps.len)));
+                } else if (rl.isKeyPressed(.down)) {
+                    menu_sel = @mod(menu_sel + 1, @as(i32, @intCast(maps.len)));
+                } else if (rl.isKeyPressed(.enter) or rl.isKeyPressed(.space) or
+                    (g_wheel.available and g_wheel.buttons[0]))
+                {
+                    if (maps[@intCast(menu_sel)].available) {
+                        try startMap(@intCast(menu_sel));
+                        const start = g_spline[0];
+                        car = Car{ .position = start.pos, .yaw = std.math.atan2(start.tangent.x, start.tangent.z) };
+                        camera_rig = CameraRig{ .anchor = start.pos, .yaw = car.yaw };
+                        elapsed = 0;
+                        state = 3;
+                    }
+                }
+                drawMapSelect(menu_sel, elapsed);
+            },
+            else => {
+                // === PLAYING ===
+                if (rl.isKeyPressed(.escape)) {
+                    endMap();
+                    state = 2;
+                    continue;
+                }
 
-            drawMenu(menu_sel);
-        } else {
-            // === PLAYING ===
-            if (rl.isKeyPressed(.escape)) {
-                endMap();
-                state = 0;
-                continue;
-            }
+                if (g_wheel.available and g_wheel.buttons[3] and !prev_btn3) {
+                    cam_mode = if (cam_mode == 0) 1 else 0;
+                }
+                prev_btn3 = g_wheel.available and g_wheel.buttons[3];
 
-            if (g_wheel.available and g_wheel.buttons[3] and !prev_btn3) {
-                cam_mode = if (cam_mode == 0) 1 else 0;
-            }
-            prev_btn3 = g_wheel.available and g_wheel.buttons[3];
+                if (rl.isKeyPressed(.tab)) show_debug = !show_debug;
+                if (rl.isKeyPressed(.c)) cam_mode = if (cam_mode == 0) 1 else 0;
+                if (rl.isKeyPressed(.r) or (g_wheel.available and g_wheel.buttons[2])) {
+                    car.reset();
+                    camera_rig.reset(car);
+                }
+                car.update(dt);
+                g_ff.update(car.speed, elapsed, car.collided);
 
-            if (rl.isKeyPressed(.tab)) show_debug = !show_debug;
-            if (rl.isKeyPressed(.c)) cam_mode = if (cam_mode == 0) 1 else 0;
-            if (rl.isKeyPressed(.r) or (g_wheel.available and g_wheel.buttons[2])) {
-                car.reset();
-                camera_rig.reset(car);
-            }
-            car.update(dt);
-            g_ff.update(car.speed, elapsed, car.collided);
+                const camera = switch (cam_mode) {
+                    0 => camera_rig.update(car, dt),
+                    else => blk: {
+                        const fwd = Vec2{ .x = @sin(car.yaw), .z = @cos(car.yaw) };
+                        break :blk rl.Camera3D{
+                            .position = .{
+                                .x = car.position.x + fwd.x * 1.8,
+                                .y = road_y + 1.4,
+                                .z = car.position.z + fwd.z * 1.8,
+                            },
+                            .target = .{
+                                .x = car.position.x + fwd.x * 20.0,
+                                .y = road_y + 1.2,
+                                .z = car.position.z + fwd.z * 20.0,
+                            },
+                            .up = .{ .x = 0, .y = 1, .z = 0 },
+                            .fovy = 67.0 + std.math.clamp(@abs(car.speed) * 0.11, 0.0, 10.0),
+                            .projection = .perspective,
+                        };
+                    },
+                };
 
-            const camera = switch (cam_mode) {
-                0 => camera_rig.update(car, dt),
-                else => blk: {
-                    const fwd = Vec2{ .x = @sin(car.yaw), .z = @cos(car.yaw) };
-                    break :blk rl.Camera3D{
-                        .position = .{
-                            .x = car.position.x + fwd.x * 1.8,
-                            .y = road_y + 1.4,
-                            .z = car.position.z + fwd.z * 1.8,
-                        },
-                        .target = .{
-                            .x = car.position.x + fwd.x * 20.0,
-                            .y = road_y + 1.2,
-                            .z = car.position.z + fwd.z * 20.0,
-                        },
-                        .up = .{ .x = 0, .y = 1, .z = 0 },
-                        .fovy = 67.0 + std.math.clamp(@abs(car.speed) * 0.11, 0.0, 10.0),
-                        .projection = .perspective,
-                    };
-                },
-            };
+                rl.beginDrawing();
+                defer rl.endDrawing();
+                rl.clearBackground(color(4, 4, 3, 255));
+                rl.drawRectangleGradientV(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), color(3, 5, 5, 255), color(20, 14, 8, 255));
 
-            rl.beginDrawing();
-            defer rl.endDrawing();
-            rl.clearBackground(color(4, 4, 3, 255));
-            rl.drawRectangleGradientV(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), color(3, 5, 5, 255), color(20, 14, 8, 255));
+                camera.begin();
+                rl.drawPlane(.{ .x = 0, .y = 0, .z = 0 }, .{ .x = 3000, .y = 3000 }, color(8, 7, 5, 255));
+                rl.drawMesh(g_bldg_mesh, g_bldg_mat, identity);
+                rl.drawMesh(g_road_mesh, g_road_mat, identity);
+                rl.beginBlendMode(.alpha);
+                rl.drawMesh(g_pool_mesh, g_pool_mat, identity);
+                rl.endBlendMode();
+                drawLamps(car.position);
+                drawTraffic(elapsed);
+                drawPlayerCar(player_model, car.position, car.yaw);
+                camera.end();
 
-            camera.begin();
-            rl.drawPlane(.{ .x = 0, .y = 0, .z = 0 }, .{ .x = 3000, .y = 3000 }, color(8, 7, 5, 255));
-            rl.drawMesh(g_bldg_mesh, g_bldg_mat, identity);
-            rl.drawMesh(g_road_mesh, g_road_mat, identity);
-            rl.beginBlendMode(.alpha);
-            rl.drawMesh(g_pool_mesh, g_pool_mat, identity);
-            rl.endBlendMode();
-            drawLamps(car.position);
-            drawTraffic(elapsed);
-            drawPlayerCar(player_model, car.position, car.yaw);
-            camera.end();
-
-            drawHud(car);
-            if (show_debug) drawDebugWheel();
+                drawHud(car);
+                if (show_debug) drawDebugWheel();
+            },
         }
     }
+}
+
+fn drawTitleBackground() void {
+    const img_w: f32 = @floatFromInt(g_title_tex.width);
+    const img_h: f32 = @floatFromInt(g_title_tex.height);
+    const scr_w: f32 = @floatFromInt(screen_width);
+    const scr_h: f32 = @floatFromInt(screen_height);
+    const cs = @max(scr_w / img_w, scr_h / img_h);
+    const dw = img_w * cs;
+    const dh = img_h * cs;
+    rl.drawTexturePro(
+        g_title_tex,
+        .{ .x = 0, .y = 0, .width = img_w, .height = img_h },
+        .{ .x = (scr_w - dw) * 0.5, .y = (scr_h - dh) * 0.5, .width = dw, .height = dh },
+        .{ .x = 0, .y = 0 },
+        0,
+        color(255, 255, 255, 255),
+    );
+}
+
+fn drawTitleScreen(elapsed: f32) void {
+    rl.beginDrawing();
+    defer rl.endDrawing();
+    rl.clearBackground(color(4, 4, 3, 255));
+    drawTitleBackground();
+    rl.drawRectangle(0, 0, screen_width, screen_height, color(4, 6, 10, 130));
+
+    const cx = screen_width / 2;
+    const cy = screen_height / 2;
+
+    // Title
+    rl.drawText("ASA MADE", cx - 90, cy - 70, 30, color(224, 237, 239, 255));
+
+    // Blinking prompt
+    const blink = @sin(elapsed * 3.0) > 0;
+    if (blink) {
+        const text: [:0]const u8 = "PRESS BUTTON TO START";
+        const tw = rl.measureText(text, 16);
+        rl.drawText(text, cx - @divTrunc(tw, 2), cy + 10, 16, color(31, 190, 217, 255));
+    }
+
+    const hint: [:0]const u8 = "ESC TO QUIT";
+    const hw = rl.measureText(hint, 11);
+    rl.drawText(hint, cx - @divTrunc(hw, 2), screen_height - 24, 11, color(90, 100, 110, 255));
+}
+
+fn drawCarSelect(player_model: PlayerModel, garage_yaw: f32, elapsed: f32) void {
+    rl.beginDrawing();
+    defer rl.endDrawing();
+    rl.clearBackground(color(8, 8, 10, 255));
+    rl.drawRectangleGradientV(0, 0, screen_width, screen_height, color(10, 12, 18, 255), color(4, 4, 6, 255));
+
+    // 3D garage scene
+    const cam = rl.Camera3D{
+        .position = .{ .x = 0, .y = 2.5, .z = -8 },
+        .target = .{ .x = 0, .y = 1.0, .z = 0 },
+        .up = .{ .x = 0, .y = 1, .z = 0 },
+        .fovy = 40,
+        .projection = .perspective,
+    };
+    cam.begin();
+    // Platform
+    rl.drawCube(.{ .x = 0, .y = 0.05, .z = 0 }, 7, 0.1, 7, color(22, 24, 30, 255));
+    rl.drawCubeWires(.{ .x = 0, .y = 0.05, .z = 0 }, 7, 0.1, 7, color(40, 44, 52, 255));
+    rl.drawGrid(14, 1.0);
+    // Car — centered at origin, rotating
+    const angle = (garage_yaw + std.math.pi * 0.5) * 180.0 / std.math.pi;
+    const cx = (player_model.bounds.min.x + player_model.bounds.max.x) * 0.5;
+    const cz = (player_model.bounds.min.z + player_model.bounds.max.z) * 0.5;
+    const rx = cx * @cos(garage_yaw + std.math.pi * 0.5) + cz * @sin(garage_yaw + std.math.pi * 0.5);
+    const rz = -cx * @sin(garage_yaw + std.math.pi * 0.5) + cz * @cos(garage_yaw + std.math.pi * 0.5);
+    player_model.model.drawEx(
+        .{
+            .x = -rx * player_model.scale,
+            .y = 0.15 - player_model.bounds.min.y * player_model.scale,
+            .z = -rz * player_model.scale,
+        },
+        .{ .x = 0, .y = 1, .z = 0 },
+        angle,
+        .{ .x = player_model.scale, .y = player_model.scale, .z = player_model.scale },
+        color(255, 255, 255, 255),
+    );
+    cam.end();
+
+    // 2D overlay
+    const cx2 = screen_width / 2;
+
+    // Header
+    const hdr: [:0]const u8 = "SELECT YOUR VEHICLE";
+    const hw = rl.measureText(hdr, 14);
+    rl.drawText(hdr, cx2 - @divTrunc(hw, 2), 24, 14, color(66, 201, 219, 255));
+
+    // Car name
+    const name: [:0]const u8 = "HONDA CIVIC";
+    const nw = rl.measureText(name, 22);
+    rl.drawText(name, cx2 - @divTrunc(nw, 2), screen_height - 52, 22, color(224, 237, 239, 255));
+
+    // Footer
+    const blink = @sin(elapsed * 3.0) > 0;
+    if (blink) {
+        const prompt: [:0]const u8 = "ENTER CONFIRM   ESC BACK";
+        const pw = rl.measureText(prompt, 11);
+        rl.drawText(prompt, cx2 - @divTrunc(pw, 2), screen_height - 22, 11, color(90, 100, 110, 255));
+    }
+}
+
+fn drawMapSelect(sel: i32, elapsed: f32) void {
+    rl.beginDrawing();
+    defer rl.endDrawing();
+    rl.clearBackground(color(4, 4, 3, 255));
+    drawTitleBackground();
+    rl.drawRectangle(0, 0, screen_width, screen_height, color(4, 6, 10, 150));
+
+    const cx = screen_width / 2;
+
+    // Header
+    const hdr: [:0]const u8 = "SELECT TRACK";
+    const hw = rl.measureText(hdr, 16);
+    rl.drawText(hdr, cx - @divTrunc(hw, 2), 28, 16, color(66, 201, 219, 255));
+
+    // Items
+    const start_y = screen_height / 2 - 30;
+    var i: i32 = 0;
+    while (i < maps.len) : (i += 1) {
+        const y = start_y + i * 50;
+        const is_sel = i == sel;
+        const map = maps[@intCast(i)];
+
+        if (is_sel) {
+            const pulse: f32 = 0.6 + 0.4 * @sin(elapsed * 4.0);
+            rl.drawRectangle(cx - 140, y - 4, 280, 38, color(31, 190, 217, @intFromFloat(35.0 * pulse)));
+            rl.drawRectangleLines(cx - 140, y - 4, 280, 38, color(31, 190, 217, 200));
+        }
+
+        const tc = if (!map.available) color(80, 80, 80, 255) else if (is_sel) color(31, 190, 217, 255) else color(200, 210, 215, 255);
+        const tw = rl.measureText(map.name, 22);
+        rl.drawText(map.name, cx - @divTrunc(tw, 2), y, 22, tc);
+
+        const desc: [:0]const u8 = if (map.available) map.desc else "Coming Soon";
+        const dw2 = rl.measureText(desc, 11);
+        rl.drawText(desc, cx - @divTrunc(dw2, 2), y + 26, 11, color(120, 130, 140, 255));
+    }
+
+    const hint: [:0]const u8 = "UP/DOWN NAVIGATE   ENTER SELECT   ESC BACK";
+    const hw2 = rl.measureText(hint, 11);
+    rl.drawText(hint, cx - @divTrunc(hw2, 2), screen_height - 22, 11, color(90, 100, 110, 255));
 }
