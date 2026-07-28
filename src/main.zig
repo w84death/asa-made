@@ -474,8 +474,6 @@ var g_facade_meshes: [2]rl.Mesh = undefined;
 var g_facade_mats: [2]rl.Material = undefined;
 var g_roof_mesh: rl.Mesh = undefined;
 var g_roof_mat: rl.Material = undefined;
-var g_pool_mesh: rl.Mesh = undefined;
-var g_pool_mat: rl.Material = undefined;
 var g_view_position_loc: i32 = -1;
 var g_scene_target: rl.RenderTexture2D = undefined;
 var g_post_shader: rl.Shader = undefined;
@@ -937,32 +935,6 @@ fn bakeBuildingMesh() !void {
     g_roof_mat.maps[0].texture = g_roof_texture;
 }
 
-// === Light pool mesh baking ===
-fn bakeLightPoolMesh() !void {
-    var mb = MeshBuilder.init(std.heap.c_allocator);
-    defer mb.deinit();
-
-    for (g_lamps) |lamp| {
-        const pool_center = add(lamp.pos, scale(lamp.normal, -2.8));
-        const center_c = if (lamp.cool) color(88, 218, 199, 36) else color(255, 151, 61, 48);
-        const edge_c = color(38, 31, 23, 0);
-        const slices: usize = 18;
-        var s: usize = 0;
-        while (s < slices) : (s += 1) {
-            const a0 = tau * @as(f32, @floatFromInt(s)) / slices;
-            const a1 = tau * @as(f32, @floatFromInt(s + 1)) / slices;
-            const p0 = Vec2{ .x = pool_center.x + @cos(a0) * 6.0, .z = pool_center.z + @sin(a0) * 9.5 };
-            const p1 = Vec2{ .x = pool_center.x + @cos(a1) * 6.0, .z = pool_center.z + @sin(a1) * 9.5 };
-            const y = road_y + 0.02;
-            try mb.tri(pool_center.x, y, pool_center.z, p1.x, y, p1.z, p0.x, y, p0.z, center_c, edge_c, edge_c);
-        }
-    }
-
-    const built = try mb.build(g_flat_shader);
-    g_pool_mesh = built.mesh;
-    g_pool_mat = built.mat;
-}
-
 // === Car physics ===
 const Car = struct {
     position: Vec2 = .{ .x = 0, .z = 0 },
@@ -1307,9 +1279,11 @@ fn drawPlayerCar(pm: PlayerModel, position: Vec2, yaw: f32) void {
 }
 
 fn drawLampCone(apex: rl.Vector3, cool: bool) void {
-    const top_color = if (cool) color(122, 236, 216, 24) else color(255, 171, 91, 29);
+    const top_color = if (cool) color(122, 236, 216, 38) else color(255, 171, 91, 46);
+    const middle_color = if (cool) color(93, 215, 201, 16) else color(241, 132, 62, 20);
     const edge_color = if (cool) color(80, 191, 179, 0) else color(220, 104, 40, 0);
     const slices: usize = 20;
+    const middle_y = apex.y + (road_y - apex.y) * 0.52;
 
     rl.beginBlendMode(.alpha);
     rl.gl.rlDisableDepthMask();
@@ -1318,11 +1292,25 @@ fn drawLampCone(apex: rl.Vector3, cool: bool) void {
     for (0..slices) |slice| {
         const a0 = tau * @as(f32, @floatFromInt(slice)) / @as(f32, @floatFromInt(slices));
         const a1 = tau * @as(f32, @floatFromInt(slice + 1)) / @as(f32, @floatFromInt(slices));
+        const middle0 = rl.Vector3{ .x = apex.x + @cos(a0) * 1.8, .y = middle_y, .z = apex.z + @sin(a0) * 2.55 };
+        const middle1 = rl.Vector3{ .x = apex.x + @cos(a1) * 1.8, .y = middle_y, .z = apex.z + @sin(a1) * 2.55 };
+        const base0 = rl.Vector3{ .x = apex.x + @cos(a0) * 3.8, .y = road_y + 0.08, .z = apex.z + @sin(a0) * 5.4 };
+        const base1 = rl.Vector3{ .x = apex.x + @cos(a1) * 3.8, .y = road_y + 0.08, .z = apex.z + @sin(a1) * 5.4 };
         rl.gl.rlColor4ub(top_color.r, top_color.g, top_color.b, top_color.a);
         rl.gl.rlVertex3f(apex.x, apex.y, apex.z);
+        rl.gl.rlColor4ub(middle_color.r, middle_color.g, middle_color.b, middle_color.a);
+        rl.gl.rlVertex3f(middle0.x, middle0.y, middle0.z);
+        rl.gl.rlVertex3f(middle1.x, middle1.y, middle1.z);
+        rl.gl.rlVertex3f(middle0.x, middle0.y, middle0.z);
         rl.gl.rlColor4ub(edge_color.r, edge_color.g, edge_color.b, edge_color.a);
-        rl.gl.rlVertex3f(apex.x + @cos(a0) * 3.8, road_y + 0.08, apex.z + @sin(a0) * 5.4);
-        rl.gl.rlVertex3f(apex.x + @cos(a1) * 3.8, road_y + 0.08, apex.z + @sin(a1) * 5.4);
+        rl.gl.rlVertex3f(base0.x, base0.y, base0.z);
+        rl.gl.rlVertex3f(base1.x, base1.y, base1.z);
+        rl.gl.rlColor4ub(middle_color.r, middle_color.g, middle_color.b, middle_color.a);
+        rl.gl.rlVertex3f(middle0.x, middle0.y, middle0.z);
+        rl.gl.rlColor4ub(edge_color.r, edge_color.g, edge_color.b, edge_color.a);
+        rl.gl.rlVertex3f(base1.x, base1.y, base1.z);
+        rl.gl.rlColor4ub(middle_color.r, middle_color.g, middle_color.b, middle_color.a);
+        rl.gl.rlVertex3f(middle1.x, middle1.y, middle1.z);
     }
     rl.gl.rlEnd();
     rl.gl.rlEnableBackfaceCulling();
@@ -1344,11 +1332,6 @@ fn drawLamps(car_pos: Vec2) void {
         drawLampCone(lamp3, lamp.cool);
         rl.drawCylinderEx(base, top, 0.09, 0.06, 6, color(73, 67, 59, 255));
         rl.drawCylinderEx(top, lamp3, 0.06, 0.045, 6, color(91, 79, 65, 255));
-        const glow = if (lamp.cool) color(80, 221, 205, 62) else color(255, 139, 44, 72);
-        rl.beginBlendMode(.additive);
-        rl.drawSphere(lamp3, 0.62, glow);
-        rl.drawSphere(lamp3, 0.3, glow);
-        rl.endBlendMode();
         const core = if (lamp.cool) color(211, 255, 235, 255) else color(255, 225, 165, 255);
         rl.drawSphere(lamp3, 0.11, core);
     }
@@ -1832,9 +1815,6 @@ fn startMap(map_idx: usize) !void {
     drawLoading("BAKING BUILDINGS");
     try bakeBuildingMesh();
 
-    drawLoading("BAKING LIGHTS");
-    try bakeLightPoolMesh();
-
     buildMinimap();
     stopMenuMusic();
     loadRadioPlaylist();
@@ -1856,8 +1836,6 @@ fn endMap() void {
     }
     rl.unloadMesh(g_roof_mesh);
     g_roof_mat.unload();
-    rl.unloadMesh(g_pool_mesh);
-    g_pool_mat.unload();
     g_arena.deinit();
     g_map_loaded = false;
     startMenuMusic();
@@ -2078,9 +2056,6 @@ pub fn main() !void {
                 for (g_facade_meshes, g_facade_mats) |mesh, material| rl.drawMesh(mesh, material, identity);
                 rl.drawMesh(g_road_mesh, g_road_mat, identity);
                 rl.drawMesh(g_barrier_mesh, g_barrier_mat, identity);
-                rl.beginBlendMode(.alpha);
-                rl.drawMesh(g_pool_mesh, g_pool_mat, identity);
-                rl.endBlendMode();
                 drawLamps(car.position);
                 drawTraffic(elapsed);
                 drawPlayerCar(player_model, car.position, car.yaw);
