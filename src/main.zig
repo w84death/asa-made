@@ -1,5 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
+const embedded_assets = @import("embedded_assets");
 
 // === Linux input headers ===
 const jsy = @cImport({
@@ -18,7 +19,7 @@ const JS_EVENT_INIT: u8 = 0x80;
 const JsEvent = extern struct {
     time: u32,
     value: i16,
-    @"type": u8,
+    type: u8,
     number: u8,
 };
 
@@ -44,9 +45,9 @@ const Wheel = struct {
         while (true) {
             const n = jsy.read(self.fd, &event, sz);
             if (n != sz) break;
-            if (event.@"type" & JS_EVENT_AXIS != 0) {
+            if (event.type & JS_EVENT_AXIS != 0) {
                 if (event.number < 8) self.axes[event.number] = @as(f32, @floatFromInt(event.value)) / 32767.0;
-            } else if (event.@"type" & JS_EVENT_BUTTON != 0) {
+            } else if (event.type & JS_EVENT_BUTTON != 0) {
                 if (event.number < 32) self.buttons[event.number] = event.value != 0;
             }
         }
@@ -111,7 +112,7 @@ const ForceFeedback = struct {
         self.writeFF(FF_AUTOCENTER, 0x5000);
 
         // Upload a continuous constant effect for road vibration + collision
-        self.effect.@"type" = FF_CONSTANT;
+        self.effect.type = FF_CONSTANT;
         self.effect.id = -1;
         self.effect.replay.length = 0; // infinite
         self.effect.u.constant.level = 0;
@@ -131,7 +132,7 @@ const ForceFeedback = struct {
 
     fn writeFF(self: ForceFeedback, code: u16, value: i32) void {
         var ie: ev.struct_input_event = std.mem.zeroes(ev.struct_input_event);
-        ie.@"type" = EV_FF;
+        ie.type = EV_FF;
         ie.code = if (self.effect.id >= 0 and code == EV_FF) @intCast(self.effect.id) else code;
         ie.value = value;
         _ = jsy.write(self.fd, &ie, @sizeOf(ev.struct_input_event));
@@ -181,8 +182,10 @@ const flat_vs =
     \\in vec4 vertexColor;
     \\uniform mat4 mvp;
     \\out vec4 fragColor;
+    \\out vec3 fragPosition;
     \\void main() {
     \\    fragColor = vertexColor;
+    \\    fragPosition = vertexPosition;
     \\    gl_Position = mvp * vec4(vertexPosition, 1.0);
     \\}
 ;
@@ -190,10 +193,48 @@ const flat_vs =
 const flat_fs =
     \\#version 330
     \\in vec4 fragColor;
+    \\in vec3 fragPosition;
     \\uniform vec4 colDiffuse;
+    \\uniform vec3 viewPosition;
     \\out vec4 finalColor;
     \\void main() {
-    \\    finalColor = fragColor * colDiffuse;
+    \\    vec4 surface = fragColor * colDiffuse;
+    \\    float distanceFog = smoothstep(48.0, 235.0, distance(viewPosition.xz, fragPosition.xz));
+    \\    float lowHaze = (1.0 - smoothstep(5.0, 42.0, fragPosition.y)) * distanceFog;
+    \\    vec3 haze = mix(vec3(0.035, 0.043, 0.039), vec3(0.105, 0.086, 0.058), lowHaze * 0.65);
+    \\    surface.rgb = mix(surface.rgb, haze, distanceFog * 0.72);
+    \\    finalColor = surface;
+    \\}
+;
+
+const ground_vs =
+    \\#version 330
+    \\in vec3 vertexPosition;
+    \\in vec2 vertexTexCoord;
+    \\uniform mat4 mvp;
+    \\out vec2 fragTexCoord;
+    \\out vec3 fragPosition;
+    \\void main() {
+    \\    fragTexCoord = vertexTexCoord;
+    \\    fragPosition = vertexPosition;
+    \\    gl_Position = mvp * vec4(vertexPosition, 1.0);
+    \\}
+;
+
+const ground_fs =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec3 fragPosition;
+    \\uniform sampler2D texture0;
+    \\uniform vec4 colDiffuse;
+    \\uniform vec3 viewPosition;
+    \\out vec4 finalColor;
+    \\void main() {
+    \\    vec3 tile = texture(texture0, fragTexCoord * 192.0).rgb;
+    \\    vec3 ground = tile * vec3(0.43, 0.40, 0.36);
+    \\    float haze = smoothstep(115.0, 540.0, distance(viewPosition.xz, fragPosition.xz));
+    \\    ground = mix(ground, vec3(0.095, 0.070, 0.042), haze * 0.88);
+    \\    finalColor = vec4(ground, 1.0) * colDiffuse;
     \\}
 ;
 
@@ -204,13 +245,15 @@ const car_vs =
     \\in vec2 vertexTexCoord;
     \\in vec4 vertexColor;
     \\uniform mat4 mvp;
+    \\uniform float lightBoost;
     \\out vec2 fragTexCoord;
     \\out vec4 fragColor;
     \\void main() {
     \\    float top = max(vertexNormal.y, 0.0);
     \\    float side = max(dot(normalize(vertexNormal), normalize(vec3(-0.45, 0.35, 0.82))), 0.0);
-    \\    vec3 sodium = vec3(1.0, 0.68, 0.38);
-    \\    vec3 lighting = vec3(0.22, 0.20, 0.18) + sodium * (top * 0.42 + side * 0.28);
+    \\    vec3 sodium = vec3(1.0, 0.67, 0.36);
+    \\    vec3 lighting = vec3(0.15, 0.17, 0.15) + sodium * (top * 0.34 + side * 0.20);
+    \\    lighting = min(lighting * lightBoost, vec3(1.25));
     \\    fragTexCoord = vertexTexCoord;
     \\    fragColor = vec4(lighting, 1.0) * vertexColor;
     \\    gl_Position = mvp * vec4(vertexPosition, 1.0);
@@ -226,6 +269,31 @@ const car_fs =
     \\out vec4 finalColor;
     \\void main() {
     \\    finalColor = texture(texture0, fragTexCoord) * fragColor * colDiffuse;
+    \\}
+;
+
+const post_fs =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\uniform sampler2D texture0;
+    \\uniform vec4 colDiffuse;
+    \\out vec4 finalColor;
+    \\void main() {
+    \\    vec4 source = texture(texture0, fragTexCoord) * fragColor * colDiffuse;
+    \\    vec3 linearColor = pow(max(source.rgb, vec3(0.0)), vec3(2.2));
+    \\    float luminance = dot(linearColor, vec3(0.2126, 0.7152, 0.0722));
+    \\    float shadow = 1.0 - smoothstep(0.025, 0.28, luminance);
+    \\    float highlight = smoothstep(0.30, 0.82, luminance);
+    \\    linearColor += shadow * vec3(-0.003, 0.006, 0.004);
+    \\    linearColor += highlight * vec3(0.014, 0.004, -0.006);
+    \\    linearColor = mix(vec3(luminance), linearColor, 0.88);
+    \\    linearColor = max((linearColor * 0.98 - 0.012) * 1.07, vec3(0.0));
+    \\    vec3 graded = pow(clamp(linearColor, 0.0, 1.0), vec3(1.0 / 2.2));
+    \\    graded = clamp((graded - 0.5) * 1.035 + 0.5, 0.0, 1.0);
+    \\    vec2 edge = fragTexCoord * (1.0 - fragTexCoord);
+    \\    float vignette = smoothstep(0.0, 0.19, edge.x * edge.y * 5.0);
+    \\    finalColor = vec4(graded * mix(0.82, 1.0, vignette), source.a);
     \\}
 ;
 
@@ -298,6 +366,7 @@ var g_collision: []SplinePt = undefined;
 var g_buildings: []BuildingData = undefined;
 var g_lamps: []LampData = undefined;
 var g_length: f32 = 0;
+var g_route_closed = true;
 var g_arena: std.heap.ArenaAllocator = undefined;
 
 // === Mesh globals ===
@@ -308,6 +377,35 @@ var g_bldg_mesh: rl.Mesh = undefined;
 var g_bldg_mat: rl.Material = undefined;
 var g_pool_mesh: rl.Mesh = undefined;
 var g_pool_mat: rl.Material = undefined;
+var g_view_position_loc: i32 = -1;
+var g_scene_target: rl.RenderTexture2D = undefined;
+var g_post_shader: rl.Shader = undefined;
+var g_ground_mesh: rl.Mesh = undefined;
+var g_ground_mat: rl.Material = undefined;
+var g_ground_texture: rl.Texture2D = undefined;
+var g_ground_shader: rl.Shader = undefined;
+var g_ground_view_position_loc: i32 = -1;
+
+fn beginFrame() void {
+    rl.beginDrawing();
+    g_scene_target.begin();
+}
+
+fn endFrame() void {
+    g_scene_target.end();
+    rl.clearBackground(color(3, 5, 5, 255));
+    g_post_shader.activate();
+    rl.drawTexturePro(
+        g_scene_target.texture,
+        .{ .x = 0, .y = 0, .width = @floatFromInt(g_scene_target.texture.width), .height = -@as(f32, @floatFromInt(g_scene_target.texture.height)) },
+        .{ .x = 0, .y = 0, .width = @floatFromInt(rl.getScreenWidth()), .height = @floatFromInt(rl.getScreenHeight()) },
+        .{ .x = 0, .y = 0 },
+        0,
+        color(255, 255, 255, 255),
+    );
+    g_post_shader.deactivate();
+    rl.endDrawing();
+}
 
 // === JSON helpers ===
 fn jf(v: std.json.Value) f32 {
@@ -328,23 +426,29 @@ fn loadWorld(json_bytes: []const u8) !void {
     const root = parsed.object;
 
     // --- Route points ---
-    const route_arr = root.get("route").?.object.get("points").?.array;
+    const route_obj = root.get("route").?.object;
+    const route_arr = route_obj.get("points").?.array;
+    g_route_closed = if (route_obj.get("is_closed")) |value| value.bool else true;
     var route_pts = try a.alloc(Vec2, route_arr.items.len);
     for (route_arr.items, 0..) |pt, i| {
         const pos = pt.object.get("position").?.array;
         route_pts[i] = .{ .x = jf(pos.items[0]), .z = jf(pos.items[2]) };
     }
 
-    g_spline = try buildSpline(a, route_pts, spline_spacing);
-    g_length = g_spline[g_spline.len - 1].dist;
-    g_collision = try buildSpline(a, route_pts, collision_spacing);
+    g_spline = try buildSpline(a, route_pts, spline_spacing, g_route_closed);
+    const spline_last = g_spline[g_spline.len - 1];
+    g_length = spline_last.dist;
+    if (g_route_closed) g_length += vecLength(.{ .x = g_spline[0].pos.x - spline_last.pos.x, .z = g_spline[0].pos.z - spline_last.pos.z });
+    g_collision = try buildSpline(a, route_pts, collision_spacing, g_route_closed);
 
     // --- Buildings (culled by distance to collision spline) ---
     const bld_arr = root.get("buildings").?.array;
     var bld_list: std.ArrayList(BuildingData) = .empty;
     for (bld_arr.items) |bld| {
         const obj = bld.object;
-        const height = if (obj.get("height_m")) |h| jf(h) else if (obj.get("fallback_height_m")) |h| jf(h) else 12.0;
+        const measured_height = if (obj.get("height_m")) |h| jf(h) else 0.0;
+        const fallback_height = if (obj.get("fallback_height_m")) |h| jf(h) else 12.0;
+        const height = if (measured_height > 0.0) measured_height else if (fallback_height > 0.0) fallback_height else 12.0;
 
         const fps_val = obj.get("footprints") orelse continue;
         const fps = fps_val.array;
@@ -384,12 +488,13 @@ fn loadWorld(json_bytes: []const u8) !void {
     g_lamps = try lamp_list.toOwnedSlice(a);
 }
 
-fn buildSpline(a: std.mem.Allocator, route: []const Vec2, spacing: f32) ![]SplinePt {
+fn buildSpline(a: std.mem.Allocator, route: []const Vec2, spacing: f32, closed: bool) ![]SplinePt {
     var list: std.ArrayList(SplinePt) = .empty;
     const n = route.len;
+    const segment_count = if (closed) n else n - 1;
 
     var i: usize = 0;
-    while (i < n) : (i += 1) {
+    while (i < segment_count) : (i += 1) {
         const p0 = route[i];
         const p1 = route[(i + 1) % n];
         const seg_len = vecLength(.{ .x = p1.x - p0.x, .z = p1.z - p0.z });
@@ -406,21 +511,27 @@ fn buildSpline(a: std.mem.Allocator, route: []const Vec2, spacing: f32) ![]Splin
             });
         }
     }
+    if (!closed) {
+        const last = route[n - 1];
+        try list.append(a, .{ .pos = last, .tangent = .{ .x = 0, .z = 0 }, .normal = .{ .x = 0, .z = 0 }, .dist = 0 });
+    }
 
     const sp = try list.toOwnedSlice(a);
     const m = sp.len;
     var cumdist: f32 = 0;
     for (0..m) |idx| {
-        const prev = sp[(idx + m - 1) % m];
-        const next = sp[(idx + 1) % m];
+        const prev = sp[if (!closed and idx == 0) 0 else (idx + m - 1) % m];
+        const next = sp[if (!closed and idx + 1 == m) m - 1 else (idx + 1) % m];
         const tx = next.pos.x - prev.pos.x;
         const tz = next.pos.z - prev.pos.z;
         const inv = 1.0 / @sqrt(tx * tx + tz * tz);
         sp[idx].tangent = .{ .x = tx * inv, .z = tz * inv };
         sp[idx].normal = .{ .x = sp[idx].tangent.z, .z = -sp[idx].tangent.x };
         sp[idx].dist = cumdist;
-        const fwd = sp[(idx + 1) % m];
-        cumdist += vecLength(.{ .x = fwd.pos.x - sp[idx].pos.x, .z = fwd.pos.z - sp[idx].pos.z });
+        if (idx + 1 < m) {
+            const fwd = sp[idx + 1];
+            cumdist += vecLength(.{ .x = fwd.pos.x - sp[idx].pos.x, .z = fwd.pos.z - sp[idx].pos.z });
+        }
     }
     return sp;
 }
@@ -437,7 +548,7 @@ fn distToSpline(spline: []const SplinePt, p: Vec2) f32 {
 }
 
 fn sampleSpline(spline: []const SplinePt, distance: f32) SplinePt {
-    const d = @mod(distance, g_length);
+    const d = if (g_route_closed) @mod(distance, g_length) else std.math.clamp(distance, 0.0, g_length);
     var lo: usize = 0;
     var hi: usize = spline.len - 1;
     while (lo < hi) {
@@ -445,6 +556,19 @@ fn sampleSpline(spline: []const SplinePt, distance: f32) SplinePt {
         if (spline[mid].dist < d) lo = mid + 1 else hi = mid;
     }
     if (lo == 0) return spline[0];
+    if (d >= spline[spline.len - 1].dist) {
+        if (!g_route_closed) return spline[spline.len - 1];
+        const sp0 = spline[spline.len - 1];
+        const sp1 = spline[0];
+        const seg = g_length - sp0.dist;
+        const t = if (seg > 0.001) (d - sp0.dist) / seg else 0.0;
+        return .{
+            .pos = .{ .x = sp0.pos.x + (sp1.pos.x - sp0.pos.x) * t, .z = sp0.pos.z + (sp1.pos.z - sp0.pos.z) * t },
+            .tangent = sp0.tangent,
+            .normal = sp0.normal,
+            .dist = d,
+        };
+    }
     const sp0 = spline[lo - 1];
     const sp1 = spline[lo];
     const seg = sp1.dist - sp0.dist;
@@ -457,10 +581,10 @@ fn sampleSpline(spline: []const SplinePt, distance: f32) SplinePt {
     };
 }
 
-const NearestTrack = struct { center: Vec2, normal: Vec2 };
+const NearestTrack = struct { center: Vec2, tangent: Vec2, normal: Vec2, dist: f32 };
 
 fn nearestTrack(position: Vec2) NearestTrack {
-    var result = NearestTrack{ .center = g_collision[0].pos, .normal = g_collision[0].normal };
+    var result = NearestTrack{ .center = g_collision[0].pos, .tangent = g_collision[0].tangent, .normal = g_collision[0].normal, .dist = g_collision[0].dist };
     var best_d2: f32 = std.math.inf(f32);
     for (g_collision) |sp| {
         const dx = position.x - sp.pos.x;
@@ -468,7 +592,7 @@ fn nearestTrack(position: Vec2) NearestTrack {
         const d2 = dx * dx + dz * dz;
         if (d2 < best_d2) {
             best_d2 = d2;
-            result = .{ .center = sp.pos, .normal = sp.normal };
+            result = .{ .center = sp.pos, .tangent = sp.tangent, .normal = sp.normal, .dist = sp.dist };
         }
     }
     return result;
@@ -523,8 +647,9 @@ fn bakeRoadMesh() !void {
     defer mb.deinit();
     const n = g_spline.len;
 
+    const segment_count = if (g_route_closed) n else n - 1;
     var i: usize = 0;
-    while (i < n) : (i += 1) {
+    while (i < segment_count) : (i += 1) {
         const sp0 = g_spline[i];
         const sp1 = g_spline[(i + 1) % n];
         const p0 = sp0.pos;
@@ -537,19 +662,21 @@ fn bakeRoadMesh() !void {
         const out0 = add(p0, scale(n0, road_half_width));
         const out1 = add(p1, scale(n1, road_half_width));
 
-        // Asphalt with warm lamp-position variation
-        const spacing_idx: usize = 16;
-        const phase = i % spacing_idx;
-        const dist_from_lamp = @min(phase, spacing_idx - phase);
-        const lit = 1.0 - std.math.clamp(@as(f32, @floatFromInt(dist_from_lamp)) / 6.0, 0.0, 1.0);
-        const asphalt = mixColor(color(24, 22, 20, 255), color(62, 48, 34, 255), lit * 0.7);
+        // Blend broad sodium pools along the asphalt instead of stepping between flat segments.
+        const lamp_period = lamp_interval / spline_spacing;
+        const phase0 = @mod(@as(f32, @floatFromInt(i)), lamp_period) / lamp_period;
+        const phase1 = @mod(@as(f32, @floatFromInt(i + 1)), lamp_period) / lamp_period;
+        const lit0 = std.math.pow(f32, @max(0.0, @cos(phase0 * tau)), 3.0);
+        const lit1 = std.math.pow(f32, @max(0.0, @cos(phase1 * tau)), 3.0);
+        const asphalt0 = mixColor(color(24, 25, 22, 255), color(61, 48, 31, 255), lit0 * 0.58);
+        const asphalt1 = mixColor(color(24, 25, 22, 255), color(61, 48, 31, 255), lit1 * 0.58);
 
-        try mb.tri(in0.x, road_y, in0.z, in1.x, road_y, in1.z, out1.x, road_y, out1.z, asphalt, asphalt, asphalt);
-        try mb.tri(in0.x, road_y, in0.z, out1.x, road_y, out1.z, out0.x, road_y, out0.z, asphalt, asphalt, asphalt);
+        try mb.tri(in0.x, road_y, in0.z, in1.x, road_y, in1.z, out1.x, road_y, out1.z, asphalt0, asphalt1, asphalt1);
+        try mb.tri(in0.x, road_y, in0.z, out1.x, road_y, out1.z, out0.x, road_y, out0.z, asphalt0, asphalt1, asphalt0);
 
         // Shoulder lines
-        const white = color(222, 218, 195, 255);
-        const amber = color(218, 142, 47, 255);
+        const white = color(198, 198, 181, 255);
+        const amber = color(194, 119, 42, 255);
         try stripQuad(&mb, p0, p1, n0, n1, -road_half_width + 0.35, 0.18, white);
         try stripQuad(&mb, p0, p1, n0, n1, road_half_width - 0.35, 0.18, amber);
 
@@ -589,9 +716,14 @@ fn bakeBuildingMesh() !void {
 
         // Deterministic hash for building color variation
         const hsh: u32 = @intCast(b);
-        const facade = if (hsh % 3 == 0) color(30, 28, 24, 255) else color(38, 33, 27, 255);
-        const wall_dark = mixColor(facade, color(8, 6, 4, 0), 0.4);
-        const wall_top = mixColor(facade, color(255, 185, 104, 0), 0.15);
+        const facade = switch (hsh % 4) {
+            0 => color(43, 51, 49, 255),
+            1 => color(54, 50, 42, 255),
+            2 => color(59, 43, 38, 255),
+            else => color(42, 53, 55, 255),
+        };
+        const wall_dark = mixColor(facade, color(15, 19, 19, 255), 0.35);
+        const wall_top = mixColor(facade, color(152, 100, 55, 255), 0.18);
 
         // Walls
         var j: usize = 0;
@@ -611,7 +743,7 @@ fn bakeBuildingMesh() !void {
         }
         cx /= @floatFromInt(pts.len);
         cz /= @floatFromInt(pts.len);
-        const roof = mixColor(facade, color(6, 5, 4, 0), 0.6);
+        const roof = mixColor(facade, color(13, 17, 17, 255), 0.48);
         j = 0;
         while (j < pts.len) : (j += 1) {
             const pa = pts[j];
@@ -631,15 +763,15 @@ fn bakeLightPoolMesh() !void {
     defer mb.deinit();
 
     for (g_lamps) |lamp| {
-        const center_c = if (lamp.cool) color(71, 225, 218, 55) else color(255, 153, 62, 65);
-        const edge_c = color(35, 28, 22, 0);
-        const slices: usize = 10;
+        const center_c = if (lamp.cool) color(88, 218, 199, 36) else color(255, 151, 61, 48);
+        const edge_c = color(38, 31, 23, 0);
+        const slices: usize = 18;
         var s: usize = 0;
         while (s < slices) : (s += 1) {
             const a0 = tau * @as(f32, @floatFromInt(s)) / slices;
             const a1 = tau * @as(f32, @floatFromInt(s + 1)) / slices;
-            const p0 = Vec2{ .x = lamp.pos.x + @cos(a0) * 4.5, .z = lamp.pos.z + @sin(a0) * 7.0 };
-            const p1 = Vec2{ .x = lamp.pos.x + @cos(a1) * 4.5, .z = lamp.pos.z + @sin(a1) * 7.0 };
+            const p0 = Vec2{ .x = lamp.pos.x + @cos(a0) * 6.0, .z = lamp.pos.z + @sin(a0) * 9.5 };
+            const p1 = Vec2{ .x = lamp.pos.x + @cos(a1) * 6.0, .z = lamp.pos.z + @sin(a1) * 9.5 };
             const y = road_y + 0.02;
             try mb.tri(lamp.pos.x, y, lamp.pos.z, p1.x, y, p1.z, p0.x, y, p0.z, center_c, edge_c, edge_c);
         }
@@ -762,6 +894,24 @@ const Car = struct {
             self.collided = true;
             self.speed = dot(self.velocity, forward);
         }
+        if (!g_route_closed) {
+            const endpoint_margin: f32 = 2.2;
+            const along = dot(.{ .x = self.position.x - nearest.center.x, .z = self.position.z - nearest.center.z }, nearest.tangent);
+            const route_distance = nearest.dist + along;
+            const beyond_start = nearest.dist < collision_spacing and route_distance < endpoint_margin;
+            const beyond_end = nearest.dist > g_length - collision_spacing and route_distance > g_length - endpoint_margin;
+            if (beyond_start or beyond_end) {
+                const correction = if (beyond_start) endpoint_margin - route_distance else g_length - endpoint_margin - route_distance;
+                self.position = add(self.position, scale(nearest.tangent, correction));
+                const endpoint_speed = dot(self.velocity, nearest.tangent);
+                if ((beyond_start and endpoint_speed < 0.0) or (beyond_end and endpoint_speed > 0.0)) {
+                    self.velocity = add(self.velocity, scale(nearest.tangent, -endpoint_speed * 1.25));
+                    self.velocity = scale(self.velocity, 0.76);
+                }
+                self.collided = true;
+                self.speed = dot(self.velocity, forward);
+            }
+        }
     }
 };
 
@@ -812,6 +962,7 @@ const PlayerModel = struct {
     shader: rl.Shader,
     bounds: rl.BoundingBox,
     scale: f32,
+    light_boost_loc: i32,
 
     fn init() !PlayerModel {
         var model = try rl.loadModel("assets/civic-raylib.glb");
@@ -820,10 +971,13 @@ const PlayerModel = struct {
         errdefer shader.unload();
         var i: usize = 0;
         while (i < @as(usize, @intCast(model.materialCount))) : (i += 1) model.materials[i].shader = shader;
+        const light_boost_loc = rl.getShaderLocation(shader, "lightBoost");
+        var light_boost: f32 = 1.0;
+        rl.setShaderValue(shader, light_boost_loc, &light_boost, .float);
 
         const bounds = rl.getModelBoundingBox(model);
         const model_length = @max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
-        return .{ .model = model, .shader = shader, .bounds = bounds, .scale = 4.35 / model_length };
+        return .{ .model = model, .shader = shader, .bounds = bounds, .scale = 4.35 / model_length, .light_boost_loc = light_boost_loc };
     }
 
     fn unload(self: PlayerModel) void {
@@ -849,16 +1003,21 @@ const PlayerModel = struct {
             color(255, 255, 255, 255),
         );
     }
+
+    fn setLightBoost(self: PlayerModel, boost: f32) void {
+        var value = boost;
+        rl.setShaderValue(self.shader, self.light_boost_loc, &value, .float);
+    }
 };
 
 // === Drawing ===
 fn drawHeadlightWash(position: Vec2, yaw: f32) void {
     const nl = localPoint(position, yaw, -0.72, 2.0);
     const nr = localPoint(position, yaw, 0.72, 2.0);
-    const fl = localPoint(position, yaw, -3.1, 12.5);
-    const fr = localPoint(position, yaw, 3.1, 12.5);
-    const near = color(255, 224, 170, 48);
-    const far = color(255, 191, 102, 0);
+    const fl = localPoint(position, yaw, -3.6, 14.5);
+    const fr = localPoint(position, yaw, 3.6, 14.5);
+    const near = color(255, 226, 177, 35);
+    const far = color(255, 183, 94, 0);
     rl.gl.rlBegin(rl.gl.rl_triangles);
     rl.gl.rlColor4ub(near.r, near.g, near.b, near.a);
     rl.gl.rlVertex3f(nl.x, road_y + 0.06, nl.z);
@@ -874,6 +1033,25 @@ fn drawHeadlightWash(position: Vec2, yaw: f32) void {
     rl.gl.rlEnd();
 }
 
+fn drawSkybox() void {
+    const width = rl.getScreenWidth();
+    const height = rl.getScreenHeight();
+    const upper_band = @divTrunc(height, 3);
+    const horizon = @divTrunc(height, 2);
+
+    rl.clearBackground(color(1, 2, 3, 255));
+    rl.drawRectangleGradientV(0, 0, width, upper_band, color(1, 2, 3, 255), color(4, 9, 10, 255));
+    rl.drawRectangleGradientV(0, upper_band, width, horizon - upper_band, color(4, 9, 10, 255), color(58, 39, 22, 255));
+
+    // A broad, low glow suggests city light below the horizon without visible sky detail.
+    rl.drawCircleGradient(
+        .{ .x = @as(f32, @floatFromInt(width)) * 0.52, .y = @as(f32, @floatFromInt(horizon)) + 110.0 },
+        @as(f32, @floatFromInt(width)) * 0.42,
+        color(113, 62, 26, 35),
+        color(28, 27, 20, 0),
+    );
+}
+
 fn boxOriented(center: Vec2, y: f32, w: f32, h: f32, l: f32, yaw: f32, tint: rl.Color) void {
     const bl = localPoint(center, yaw, -w * 0.5, -l * 0.5);
     const br = localPoint(center, yaw, w * 0.5, -l * 0.5);
@@ -882,38 +1060,41 @@ fn boxOriented(center: Vec2, y: f32, w: f32, h: f32, l: f32, yaw: f32, tint: rl.
     const y0 = y;
     const y1 = y + h;
     const dark = mixColor(tint, color(6, 5, 4, 255), 0.55);
-    const side = mixColor(tint, color(24, 16, 10, 255), 0.3);
-    const top = mixColor(tint, color(255, 185, 104, 255), 0.24);
-    const tri = struct {
-        fn t(a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, col: rl.Color) void {
+    const side = mixColor(tint, color(23, 20, 17, 255), 0.34);
+    const top = mixColor(tint, color(181, 132, 76, 255), 0.18);
+    const face = struct {
+        fn q(a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, col: rl.Color) void {
             rl.gl.rlBegin(rl.gl.rl_triangles);
             rl.gl.rlColor4ub(col.r, col.g, col.b, col.a);
             rl.gl.rlVertex3f(a.x, a.y, a.z);
-            rl.gl.rlColor4ub(col.r, col.g, col.b, col.a);
+            rl.gl.rlVertex3f(c.x, c.y, c.z);
             rl.gl.rlVertex3f(b.x, b.y, b.z);
-            rl.gl.rlColor4ub(col.r, col.g, col.b, col.a);
+            rl.gl.rlVertex3f(a.x, a.y, a.z);
+            rl.gl.rlVertex3f(d.x, d.y, d.z);
             rl.gl.rlVertex3f(c.x, c.y, c.z);
             rl.gl.rlEnd();
         }
     };
-    _ = tri;
-    _ = dark;
-    _ = side;
-    _ = top;
-    _ = bl;
-    _ = br;
-    _ = fl;
-    _ = fr;
-    _ = y0;
-    _ = y1;
-    // Simple single-color box for traffic
-    rl.drawCubeV(.{ .x = center.x, .y = y + h * 0.5, .z = center.z }, .{ .x = w, .y = h, .z = l }, tint);
+    const bl0 = v3(bl, y0);
+    const br0 = v3(br, y0);
+    const fl0 = v3(fl, y0);
+    const fr0 = v3(fr, y0);
+    const bl1 = v3(bl, y1);
+    const br1 = v3(br, y1);
+    const fl1 = v3(fl, y1);
+    const fr1 = v3(fr, y1);
+    face.q(bl0, br0, br1, bl1, dark);
+    face.q(fr0, fl0, fl1, fr1, tint);
+    face.q(fl0, bl0, bl1, fl1, side);
+    face.q(br0, fr0, fr1, br1, side);
+    face.q(bl1, br1, fr1, fl1, top);
 }
 
 fn drawCar(position: Vec2, yaw: f32, paint: rl.Color) void {
     drawHeadlightWash(position, yaw);
-    rl.drawCubeV(.{ .x = position.x, .y = road_y + 0.5, .z = position.z }, .{ .x = 2.0, .y = 0.7, .z = 4.2 }, paint);
-    rl.drawCubeWiresV(.{ .x = position.x, .y = road_y + 0.5, .z = position.z }, .{ .x = 2.0, .y = 0.7, .z = 4.2 }, color(15, 12, 8, 255));
+    boxOriented(position, road_y + 0.18, 2.0, 0.62, 4.25, yaw, paint);
+    const cabin = localPoint(position, yaw, 0, -0.15);
+    boxOriented(cabin, road_y + 0.78, 1.62, 0.48, 2.05, yaw, mixColor(paint, color(18, 24, 25, 255), 0.72));
     const nose = localPoint(position, yaw, 0, 2.1);
     for ([_]f32{ -0.62, 0.62 }) |side| {
         const lamp = localPoint(nose, yaw, side, 0);
@@ -928,6 +1109,7 @@ fn drawCar(position: Vec2, yaw: f32, paint: rl.Color) void {
 
 fn drawPlayerCar(pm: PlayerModel, position: Vec2, yaw: f32) void {
     drawHeadlightWash(position, yaw);
+    pm.setLightBoost(1.0);
     pm.draw(position, yaw);
     const nose = localPoint(position, yaw, 0, 2.16);
     for ([_]f32{ -0.62, 0.62 }) |side| {
@@ -956,26 +1138,34 @@ fn drawLamps(car_pos: Vec2) void {
         const lamp3 = v3(lamp_pos, road_y + 4.85);
         rl.drawCylinderEx(base, top, 0.09, 0.06, 6, color(73, 67, 59, 255));
         rl.drawCylinderEx(top, lamp3, 0.06, 0.045, 6, color(91, 79, 65, 255));
-        const glow = if (lamp.cool) color(65, 229, 221, 100) else color(255, 145, 53, 105);
-        const core = if (lamp.cool) color(204, 255, 239, 255) else color(255, 231, 177, 255);
-        rl.drawSphere(lamp3, 0.4, glow);
-        rl.drawSphere(lamp3, 0.13, core);
+        const glow = if (lamp.cool) color(80, 221, 205, 62) else color(255, 139, 44, 72);
+        rl.beginBlendMode(.additive);
+        rl.drawSphere(lamp3, 0.62, glow);
+        rl.drawSphere(lamp3, 0.3, glow);
+        rl.endBlendMode();
+        const core = if (lamp.cool) color(211, 255, 235, 255) else color(255, 225, 165, 255);
+        rl.drawSphere(lamp3, 0.11, core);
     }
 }
 
 fn drawTraffic(elapsed: f32) void {
     const paints = [_]rl.Color{
-        color(224, 218, 199, 255), color(31, 50, 117, 255),  color(151, 38, 30, 255),
-        color(38, 36, 32, 255),    color(186, 124, 42, 255), color(43, 91, 75, 255),
+        color(199, 195, 181, 255), color(27, 42, 90, 255),  color(119, 35, 29, 255),
+        color(34, 34, 31, 255),    color(137, 94, 42, 255), color(40, 67, 58, 255),
     };
     var i: usize = 0;
     while (i < 12) : (i += 1) {
         const fi: f32 = @floatFromInt(i);
-        const d = @mod(fi * (g_length / 12.0) + elapsed * (8.0 + fi * 0.5), g_length);
+        const travel = fi * (g_length / 12.0) + elapsed * (8.0 + fi * 0.5);
+        const phase = if (g_route_closed) @mod(travel, g_length) else @mod(travel, g_length * 2.0);
+        const reverse = !g_route_closed and phase > g_length;
+        const d = if (reverse) g_length * 2.0 - phase else phase;
         const sp = sampleSpline(g_spline, d);
         const lane: f32 = if (i % 2 == 0) -2.5 else 2.5;
         const pos = add(sp.pos, scale(sp.normal, lane));
-        drawCar(pos, std.math.atan2(sp.tangent.x, sp.tangent.z), paints[i % paints.len]);
+        const reverse_yaw: f32 = if (reverse) std.math.pi else 0.0;
+        const yaw = std.math.atan2(sp.tangent.x, sp.tangent.z) + reverse_yaw;
+        drawCar(pos, yaw, paints[i % paints.len]);
     }
 }
 
@@ -985,26 +1175,26 @@ fn drawHud(car: Car) void {
     const sx = width - 82;
     const sy = height - 94;
 
-    rl.drawRectangleGradientV(0, 0, width, 88, color(4, 8, 15, 185), color(4, 8, 15, 0));
-    rl.drawText("ASA MADE", 28, 22, 24, color(224, 237, 239, 255));
-    rl.drawText("HANSHIN LOOP // OSAKA", 29, 50, 12, color(66, 201, 219, 255));
+    rl.drawRectangleGradientV(0, 0, width, 88, color(5, 8, 8, 185), color(5, 8, 8, 0));
+    rl.drawText("ASA MADE", 28, 22, 24, color(226, 224, 207, 255));
+    rl.drawText("HANSHIN LOOP // OSAKA", 29, 50, 12, color(117, 196, 181, 255));
     rl.drawFPS(width - 92, 18);
 
-    rl.drawCircleGradient(.{ .x = @floatFromInt(sx), .y = @floatFromInt(sy) }, 76, color(10, 14, 23, 210), color(10, 14, 23, 35));
-    rl.drawCircleLines(sx, sy, 59, color(89, 109, 121, 220));
+    rl.drawCircleGradient(.{ .x = @floatFromInt(sx), .y = @floatFromInt(sy) }, 76, color(8, 12, 12, 205), color(8, 12, 12, 30));
+    rl.drawCircleLines(sx, sy, 59, color(102, 111, 101, 190));
     const kmh: i32 = @intFromFloat(@abs(car.speed) * 3.6);
     var speed_buf: [16]u8 = undefined;
     const speed_text = std.fmt.bufPrintZ(&speed_buf, "{d:0>3}", .{kmh}) catch "---";
     rl.drawText(speed_text, sx - 39, sy - 24, 38, color(239, 245, 241, 255));
-    rl.drawText("KM/H", sx - 18, sy + 18, 13, color(74, 210, 224, 255));
-    rl.drawText(if (car.speed < -0.5) "R" else "5", sx + 20, sy + 25, 22, color(245, 67, 104, 255));
+    rl.drawText("KM/H", sx - 18, sy + 18, 13, color(117, 196, 181, 255));
+    rl.drawText(if (car.speed < -0.5) "R" else "5", sx + 20, sy + 25, 22, color(231, 70, 48, 255));
     if (car.drift_amount > 0.18) {
-        rl.drawText("DRIFT", sx - 25, sy - 58, 16, color(245, 67, 104, 255));
+        rl.drawText("DRIFT", sx - 25, sy - 58, 16, color(231, 70, 48, 255));
     }
 
     rl.drawRectangle(27, height - 57, 205, 5, color(29, 40, 51, 230));
     const bw: i32 = @intFromFloat(205.0 * std.math.clamp(@abs(car.speed) / 84.0, 0.0, 1.0));
-    rl.drawRectangle(27, height - 57, bw, 5, color(31, 190, 217, 255));
+    rl.drawRectangle(27, height - 57, bw, 5, color(205, 126, 48, 255));
     rl.drawText("SPEED BREAKER", 27, height - 45, 12, color(155, 174, 181, 255));
     rl.drawText("WASD/WHEEL DRIVE  SPACE HANDBRAKE  R RESET", 27, height - 21, 11, color(122, 139, 148, 255));
 
@@ -1112,8 +1302,8 @@ var g_title_tex: rl.Texture2D = undefined;
 
 fn drawLoading(stage: [:0]const u8) void {
     g_load_anim += 0.15;
-    rl.beginDrawing();
-    defer rl.endDrawing();
+    beginFrame();
+    defer endFrame();
     rl.clearBackground(color(4, 4, 3, 255));
 
     // Title image background (cover-fit)
@@ -1163,7 +1353,7 @@ const MapEntry = struct {
 };
 
 const osaka_json = @embedFile("loop_scene.json");
-const poznan_json = @embedFile("poznan.json");
+const poznan_json = embedded_assets.poznan_json;
 
 const maps = [_]MapEntry{
     .{ .name = "OSAKA", .desc = "Hanshin Expressway Loop", .available = true, .json = osaka_json },
@@ -1304,7 +1494,8 @@ fn drawMinimap(car: Car) void {
     // Track outline
     const n = g_collision.len;
     var i: usize = 0;
-    while (i < n) : (i += 1) {
+    const segment_count = if (g_route_closed) n else n - 1;
+    while (i < segment_count) : (i += 1) {
         const p0 = worldToMinimap(g_collision[i].pos.x, g_collision[i].pos.z, mx, my, half);
         const p1 = worldToMinimap(g_collision[(i + 1) % n].pos.x, g_collision[(i + 1) % n].pos.z, mx, my, half);
         rl.drawLineV(p0, p1, color(50, 110, 130, 200));
@@ -1374,6 +1565,26 @@ pub fn main() !void {
     g_title_tex = try rl.loadTexture("assets/title.png");
     defer rl.unloadTexture(g_title_tex);
     g_flat_shader = try rl.loadShaderFromMemory(flat_vs, flat_fs);
+    defer g_flat_shader.unload();
+    g_view_position_loc = rl.getShaderLocation(g_flat_shader, "viewPosition");
+    g_scene_target = try rl.loadRenderTexture(screen_width, screen_height);
+    defer g_scene_target.unload();
+    g_post_shader = try rl.loadShaderFromMemory(null, post_fs);
+    defer g_post_shader.unload();
+    g_ground_texture = try rl.loadTexture("assets/city-ground.png");
+    defer rl.unloadTexture(g_ground_texture);
+    rl.genTextureMipmaps(&g_ground_texture);
+    rl.setTextureWrap(g_ground_texture, .repeat);
+    rl.setTextureFilter(g_ground_texture, .trilinear);
+    g_ground_shader = try rl.loadShaderFromMemory(ground_vs, ground_fs);
+    defer g_ground_shader.unload();
+    g_ground_view_position_loc = rl.getShaderLocation(g_ground_shader, "viewPosition");
+    g_ground_mesh = rl.genMeshPlane(30000.0, 30000.0, 1, 1);
+    defer rl.unloadMesh(g_ground_mesh);
+    g_ground_mat = try rl.loadMaterialDefault();
+    defer g_ground_mat.unload();
+    g_ground_mat.shader = g_ground_shader;
+    g_ground_mat.maps[0].texture = g_ground_texture;
 
     drawLoading("LOADING VEHICLE");
     const player_model = try PlayerModel.init();
@@ -1503,13 +1714,16 @@ pub fn main() !void {
                     },
                 };
 
-                rl.beginDrawing();
-                defer rl.endDrawing();
-                rl.clearBackground(color(4, 4, 3, 255));
-                rl.drawRectangleGradientV(0, 0, rl.getScreenWidth(), rl.getScreenHeight(), color(3, 5, 5, 255), color(20, 14, 8, 255));
+                beginFrame();
+                defer endFrame();
+                drawSkybox();
+
+                const view_position = [3]f32{ camera.position.x, camera.position.y, camera.position.z };
+                rl.setShaderValue(g_flat_shader, g_view_position_loc, &view_position, .vec3);
+                rl.setShaderValue(g_ground_shader, g_ground_view_position_loc, &view_position, .vec3);
 
                 camera.begin();
-                rl.drawPlane(.{ .x = 0, .y = 0, .z = 0 }, .{ .x = 3000, .y = 3000 }, color(8, 7, 5, 255));
+                rl.drawMesh(g_ground_mesh, g_ground_mat, identity);
                 rl.drawMesh(g_bldg_mesh, g_bldg_mat, identity);
                 rl.drawMesh(g_road_mesh, g_road_mat, identity);
                 rl.beginBlendMode(.alpha);
@@ -1519,6 +1733,9 @@ pub fn main() !void {
                 drawTraffic(elapsed);
                 drawPlayerCar(player_model, car.position, car.yaw);
                 camera.end();
+
+                const screen_h = rl.getScreenHeight();
+                rl.drawRectangleGradientV(0, @divTrunc(screen_h, 2), rl.getScreenWidth(), @divTrunc(screen_h, 2), color(32, 22, 13, 0), color(32, 22, 13, 38));
 
                 drawHud(car);
                 if (show_debug) drawDebugWheel();
@@ -1546,8 +1763,8 @@ fn drawTitleBackground() void {
 }
 
 fn drawTitleScreen(elapsed: f32) void {
-    rl.beginDrawing();
-    defer rl.endDrawing();
+    beginFrame();
+    defer endFrame();
     rl.clearBackground(color(4, 4, 3, 255));
     drawTitleBackground();
     rl.drawRectangle(0, 0, screen_width, screen_height, color(4, 6, 10, 130));
@@ -1572,10 +1789,16 @@ fn drawTitleScreen(elapsed: f32) void {
 }
 
 fn drawCarSelect(player_model: PlayerModel, garage_yaw: f32, elapsed: f32) void {
-    rl.beginDrawing();
-    defer rl.endDrawing();
-    rl.clearBackground(color(8, 8, 10, 255));
-    rl.drawRectangleGradientV(0, 0, screen_width, screen_height, color(10, 12, 18, 255), color(4, 4, 6, 255));
+    beginFrame();
+    defer endFrame();
+    rl.clearBackground(color(2, 1, 2, 255));
+    rl.drawRectangleGradientV(0, 0, screen_width, screen_height, color(2, 1, 2, 255), color(67, 5, 12, 255));
+    rl.drawCircleGradient(
+        .{ .x = @as(f32, @floatFromInt(screen_width)) * 0.5, .y = @as(f32, @floatFromInt(screen_height)) * 0.62 },
+        430,
+        color(148, 17, 24, 62),
+        color(34, 2, 7, 0),
+    );
 
     // 3D garage scene
     const cam = rl.Camera3D{
@@ -1586,11 +1809,17 @@ fn drawCarSelect(player_model: PlayerModel, garage_yaw: f32, elapsed: f32) void 
         .projection = .perspective,
     };
     cam.begin();
-    // Platform
-    rl.drawCube(.{ .x = 0, .y = 0.05, .z = 0 }, 7, 0.1, 7, color(22, 24, 30, 255));
-    rl.drawCubeWires(.{ .x = 0, .y = 0.05, .z = 0 }, 7, 0.1, 7, color(40, 44, 52, 255));
-    rl.drawGrid(14, 1.0);
+    // Matte plinth and a soft fake pool from the overhead lamp.
+    rl.drawCylinder(.{ .x = 0, .y = 0, .z = 0 }, 3.7, 3.9, 0.12, 64, color(19, 15, 17, 255));
+    rl.beginBlendMode(.alpha);
+    rl.drawCylinder(.{ .x = 0, .y = 0.125, .z = 0 }, 3.15, 3.15, 0.008, 64, color(181, 33, 31, 22));
+    rl.drawCylinder(.{ .x = 0, .y = 0.134, .z = 0 }, 2.35, 2.35, 0.008, 64, color(224, 84, 55, 28));
+    rl.drawCylinder(.{ .x = 0, .y = 0.143, .z = 0 }, 1.55, 1.55, 0.008, 64, color(255, 184, 132, 34));
+    rl.drawCylinder(.{ .x = 0, .y = 0.15, .z = 0 }, 0.32, 3.5, 4.1, 48, color(255, 91, 70, 10));
+    rl.endBlendMode();
+    rl.drawCylinder(.{ .x = 0, .y = 4.25, .z = 0 }, 0.62, 0.62, 0.18, 32, color(242, 188, 153, 255));
     // Car — centered at origin, rotating
+    player_model.setLightBoost(2.35);
     const angle = (garage_yaw + std.math.pi * 0.5) * 180.0 / std.math.pi;
     const cx = (player_model.bounds.min.x + player_model.bounds.max.x) * 0.5;
     const cz = (player_model.bounds.min.z + player_model.bounds.max.z) * 0.5;
@@ -1632,8 +1861,8 @@ fn drawCarSelect(player_model: PlayerModel, garage_yaw: f32, elapsed: f32) void 
 }
 
 fn drawMapSelect(sel: i32, elapsed: f32) void {
-    rl.beginDrawing();
-    defer rl.endDrawing();
+    beginFrame();
+    defer endFrame();
     rl.clearBackground(color(4, 4, 3, 255));
     drawTitleBackground();
     rl.drawRectangle(0, 0, screen_width, screen_height, color(4, 6, 10, 150));

@@ -118,7 +118,13 @@ fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget,
         .optimize = optimize,
         .link_libc = true,
     });
+    const embedded_assets_mod = b.createModule(.{
+        .root_source_file = b.path("assets/embedded.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     exe_mod.addImport("raylib", raylib_zig_mod);
+    exe_mod.addImport("embedded_assets", embedded_assets_mod);
     exe_mod.linkLibrary(raylib_lib);
     linkPlatformLibs(exe_mod, os_tag);
 
