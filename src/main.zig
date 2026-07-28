@@ -1117,68 +1117,32 @@ const CameraRig = struct {
     }
 };
 
-// === Player model ===
-const PlayerModel = struct {
-    model: rl.Model,
-    shader: rl.Shader,
-    bounds: rl.BoundingBox,
-    scale: f32,
-    light_boost_loc: i32,
-
-    fn init() !PlayerModel {
-        var model = try rl.loadModel("assets/cars/civic-raylib.glb");
-        errdefer model.unload();
-        const shader = try rl.loadShaderFromMemory(car_vs, car_fs);
-        errdefer shader.unload();
-        var i: usize = 0;
-        while (i < @as(usize, @intCast(model.materialCount))) : (i += 1) model.materials[i].shader = shader;
-        const light_boost_loc = rl.getShaderLocation(shader, "lightBoost");
-        var light_boost: f32 = 1.0;
-        rl.setShaderValue(shader, light_boost_loc, &light_boost, .float);
-
-        const bounds = rl.getModelBoundingBox(model);
-        const model_length = @max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
-        return .{ .model = model, .shader = shader, .bounds = bounds, .scale = 4.35 / model_length, .light_boost_loc = light_boost_loc };
-    }
-
-    fn unload(self: PlayerModel) void {
-        self.model.unload();
-        self.shader.unload();
-    }
-
-    fn draw(self: PlayerModel, position: Vec2, yaw: f32) void {
-        const angle = yaw + std.math.pi * 0.5;
-        const cx = (self.bounds.min.x + self.bounds.max.x) * 0.5;
-        const cz = (self.bounds.min.z + self.bounds.max.z) * 0.5;
-        const rx = cx * @cos(angle) + cz * @sin(angle);
-        const rz = -cx * @sin(angle) + cz * @cos(angle);
-        self.model.drawEx(
-            .{
-                .x = position.x - rx * self.scale,
-                .y = road_y + 0.14 - self.bounds.min.y * self.scale,
-                .z = position.z - rz * self.scale,
-            },
-            .{ .x = 0.0, .y = 1.0, .z = 0.0 },
-            angle * 180.0 / std.math.pi,
-            .{ .x = self.scale, .y = self.scale, .z = self.scale },
-            color(255, 255, 255, 255),
-        );
-    }
-
-    fn setLightBoost(self: PlayerModel, boost: f32) void {
-        var value = boost;
-        rl.setShaderValue(self.shader, self.light_boost_loc, &value, .float);
-    }
+// === Vehicle models ===
+const VehicleEntry = struct {
+    path: [:0]const u8,
+    name: [:0]const u8,
 };
 
-const TrafficModel = struct {
+const vehicle_entries = [_]VehicleEntry{
+    .{ .path = "assets/cars/car_01.glb", .name = "CAR 01" },
+    .{ .path = "assets/cars/car_02.glb", .name = "CAR 02" },
+    .{ .path = "assets/cars/car_03.glb", .name = "CAR 03" },
+    .{ .path = "assets/cars/car_04.glb", .name = "CAR 04" },
+    .{ .path = "assets/cars/car_05.glb", .name = "CAR 05" },
+    .{ .path = "assets/cars/car_06.glb", .name = "CAR 06" },
+    .{ .path = "assets/cars/car_07.glb", .name = "CAR 07" },
+    .{ .path = "assets/cars/car_08.glb", .name = "CAR 08" },
+    .{ .path = "assets/cars/car_09.glb", .name = "CAR 09" },
+};
+
+const VehicleModel = struct {
     model: rl.Model,
     bounds: rl.BoundingBox,
     scale: f32,
     axis_rotation: f32,
     length: f32,
 
-    fn init(path: [:0]const u8, desired_length: f32, shader: rl.Shader) !TrafficModel {
+    fn init(path: [:0]const u8, shader: rl.Shader) !VehicleModel {
         var model = try rl.loadModel(path);
         errdefer model.unload();
         var material_index: usize = 0;
@@ -1189,21 +1153,21 @@ const TrafficModel = struct {
         const bounds = rl.getModelBoundingBox(model);
         const x_span = bounds.max.x - bounds.min.x;
         const z_span = bounds.max.z - bounds.min.z;
-        const model_length = @max(x_span, z_span);
+        const desired_length: f32 = 4.55;
         return .{
             .model = model,
             .bounds = bounds,
-            .scale = desired_length / model_length,
+            .scale = desired_length / @max(x_span, z_span),
             .axis_rotation = if (x_span >= z_span) std.math.pi * 0.5 else 0.0,
             .length = desired_length,
         };
     }
 
-    fn unload(self: TrafficModel) void {
+    fn unload(self: VehicleModel) void {
         self.model.unload();
     }
 
-    fn draw(self: TrafficModel, position: Vec2, yaw: f32) void {
+    fn draw(self: VehicleModel, position: Vec2, yaw: f32, base_y: f32) void {
         const angle = yaw + self.axis_rotation;
         const cx = (self.bounds.min.x + self.bounds.max.x) * 0.5;
         const cz = (self.bounds.min.z + self.bounds.max.z) * 0.5;
@@ -1212,7 +1176,7 @@ const TrafficModel = struct {
         self.model.drawEx(
             .{
                 .x = position.x - rx * self.scale,
-                .y = road_y + 0.14 - self.bounds.min.y * self.scale,
+                .y = base_y - self.bounds.min.y * self.scale,
                 .z = position.z - rz * self.scale,
             },
             .{ .x = 0, .y = 1, .z = 0 },
@@ -1223,41 +1187,40 @@ const TrafficModel = struct {
     }
 };
 
-const TrafficFleet = struct {
-    models: [9]?TrafficModel,
-    count: usize,
+const VehicleCatalog = struct {
+    models: [vehicle_entries.len]VehicleModel,
+    shader: rl.Shader,
+    light_boost_loc: i32,
 
-    fn init(shader: rl.Shader) !TrafficFleet {
-        const entries = [_]struct { path: [:0]const u8, fallback: ?[:0]const u8 = null, length: f32 }{
-            .{ .path = "assets/cars/bus2.glb", .fallback = "assets/cars/bus.glb", .length = 9.0 },
-            .{ .path = "assets/cars/car1.glb", .length = 4.5 },
-            .{ .path = "assets/cars/car2.glb", .length = 4.5 },
-            .{ .path = "assets/cars/car3.glb", .length = 4.5 },
-            .{ .path = "assets/cars/car4.glb", .length = 4.5 },
-            .{ .path = "assets/cars/car5.glb", .length = 4.5 },
-            .{ .path = "assets/cars/minibus.glb", .fallback = "assets/cars/minibus2.glb", .length = 5.8 },
-            .{ .path = "assets/cars/wagon.glb", .fallback = "assets/cars/wagon2.glb", .length = 4.8 },
-            .{ .path = "assets/cars/wagon3.glb", .length = 4.8 },
-        };
-        var models: [entries.len]?TrafficModel = .{null} ** entries.len;
+    fn init() !VehicleCatalog {
+        const shader = try rl.loadShaderFromMemory(car_vs, car_fs);
+        errdefer shader.unload();
+        var models: [vehicle_entries.len]VehicleModel = undefined;
         var loaded: usize = 0;
-        errdefer for (models[0..loaded]) |model| if (model) |value| value.unload();
-        for (entries) |entry| {
-            const model = TrafficModel.init(entry.path, entry.length, shader) catch blk: {
-                if (entry.fallback) |fallback| {
-                    break :blk TrafficModel.init(fallback, entry.length, shader) catch continue;
-                }
-                continue;
-            };
-            models[loaded] = model;
+        errdefer for (models[0..loaded]) |model| model.unload();
+
+        for (vehicle_entries, 0..) |entry, index| {
+            var stage_buf: [48]u8 = undefined;
+            const stage = std.fmt.bufPrintZ(&stage_buf, "LOADING VEHICLE {d}/{d}", .{ index + 1, vehicle_entries.len }) catch "LOADING VEHICLES";
+            drawLoading(stage);
+            models[index] = try VehicleModel.init(entry.path, shader);
             loaded += 1;
         }
-        if (loaded == 0) return error.NoTrafficModels;
-        return .{ .models = models, .count = loaded };
+
+        const light_boost_loc = rl.getShaderLocation(shader, "lightBoost");
+        var light_boost: f32 = 1.0;
+        rl.setShaderValue(shader, light_boost_loc, &light_boost, .float);
+        return .{ .models = models, .shader = shader, .light_boost_loc = light_boost_loc };
     }
 
-    fn unload(self: TrafficFleet) void {
-        for (self.models[0..self.count]) |model| if (model) |value| value.unload();
+    fn unload(self: VehicleCatalog) void {
+        for (self.models) |model| model.unload();
+        self.shader.unload();
+    }
+
+    fn setLightBoost(self: VehicleCatalog, boost: f32) void {
+        var value = boost;
+        rl.setShaderValue(self.shader, self.light_boost_loc, &value, .float);
     }
 };
 
@@ -1303,17 +1266,18 @@ fn drawSkybox() void {
     );
 }
 
-fn drawPlayerCar(pm: PlayerModel, position: Vec2, yaw: f32) void {
+fn drawPlayerCar(catalog: VehicleCatalog, selected: usize, position: Vec2, yaw: f32) void {
     drawHeadlightWash(position, yaw);
-    pm.setLightBoost(1.0);
-    pm.draw(position, yaw);
-    const nose = localPoint(position, yaw, 0, 2.16);
+    catalog.setLightBoost(1.0);
+    const vehicle = catalog.models[selected];
+    vehicle.draw(position, yaw, road_y + 0.14);
+    const nose = localPoint(position, yaw, 0, vehicle.length * 0.5);
     for ([_]f32{ -0.62, 0.62 }) |side| {
         const lamp = localPoint(nose, yaw, side, 0);
         rl.drawSphere(v3(lamp, road_y + 0.58), 0.2, color(255, 227, 177, 105));
         rl.drawSphere(v3(lamp, road_y + 0.58), 0.11, color(255, 249, 222, 255));
     }
-    const tail = localPoint(position, yaw, 0, -2.16);
+    const tail = localPoint(position, yaw, 0, -vehicle.length * 0.5);
     for ([_]f32{ -0.68, 0.68 }) |side| {
         const lamp = localPoint(tail, yaw, side, 0);
         rl.drawSphere(v3(lamp, road_y + 0.55), 0.22, color(255, 24, 19, 90));
@@ -1394,7 +1358,7 @@ fn drawTrafficLights(position: Vec2, yaw: f32, vehicle_length: f32) void {
     }
 }
 
-fn drawTraffic(fleet: TrafficFleet, elapsed: f32) void {
+fn drawTraffic(catalog: VehicleCatalog, selected: usize, elapsed: f32) void {
     var i: usize = 0;
     while (i < 12) : (i += 1) {
         const fi: f32 = @floatFromInt(i);
@@ -1407,8 +1371,10 @@ fn drawTraffic(fleet: TrafficFleet, elapsed: f32) void {
         const pos = add(sp.pos, scale(sp.normal, lane));
         const reverse_yaw: f32 = if (reverse) std.math.pi else 0.0;
         const yaw = std.math.atan2(sp.tangent.x, sp.tangent.z) + reverse_yaw;
-        const vehicle = fleet.models[i % fleet.count].?;
-        vehicle.draw(pos, yaw);
+        var vehicle_index = i % (catalog.models.len - 1);
+        if (vehicle_index >= selected) vehicle_index += 1;
+        const vehicle = catalog.models[vehicle_index];
+        vehicle.draw(pos, yaw, road_y + 0.14);
         drawTrafficLights(pos, yaw, vehicle.length);
     }
 }
@@ -1543,6 +1509,17 @@ fn drawDebugWheel() void {
 // === Loading screen ===
 var g_load_anim: f32 = 0;
 var g_title_tex: rl.Texture2D = undefined;
+
+fn drawBootstrapLoading() void {
+    rl.beginDrawing();
+    defer rl.endDrawing();
+    rl.clearBackground(color(2, 2, 3, 255));
+    rl.drawRectangleGradientV(0, 0, screen_width, screen_height, color(2, 2, 3, 255), color(52, 5, 10, 255));
+    const title: [:0]const u8 = "ASA MADE";
+    const status: [:0]const u8 = "STARTING NIGHT DRIVE";
+    rl.drawText(title, @divTrunc(screen_width - rl.measureText(title, 30), 2), screen_height / 2 - 28, 30, color(226, 224, 207, 255));
+    rl.drawText(status, @divTrunc(screen_width - rl.measureText(status, 12), 2), screen_height / 2 + 12, 12, color(205, 126, 48, 255));
+}
 
 fn drawLoading(stage: [:0]const u8) void {
     g_load_anim += 0.15;
@@ -1903,6 +1880,7 @@ pub fn main() !void {
     defer rl.closeWindow();
     rl.setTargetFPS(60);
     rl.gl.rlSetClipPlanes(0.05, 4000.0);
+    drawBootstrapLoading();
 
     // Persistent resources
     g_title_tex = try rl.loadTexture("assets/title.png");
@@ -1914,6 +1892,7 @@ pub fn main() !void {
     defer g_scene_target.unload();
     g_post_shader = try rl.loadShaderFromMemory(null, post_fs);
     defer g_post_shader.unload();
+    drawLoading("LOADING CITY GROUND");
     g_ground_texture = try rl.loadTexture("assets/tex/city-ground.png");
     defer rl.unloadTexture(g_ground_texture);
     rl.genTextureMipmaps(&g_ground_texture);
@@ -1928,6 +1907,7 @@ pub fn main() !void {
     defer g_ground_mat.unload();
     g_ground_mat.shader = g_ground_shader;
     g_ground_mat.maps[0].texture = g_ground_texture;
+    drawLoading("LOADING ROAD MATERIALS");
     g_tarmac_texture = try rl.loadTexture("assets/tex/tarmac.png");
     defer rl.unloadTexture(g_tarmac_texture);
     rl.genTextureMipmaps(&g_tarmac_texture);
@@ -1944,6 +1924,7 @@ pub fn main() !void {
     g_barrier_shader = try rl.loadShaderFromMemory(road_vs, barrier_fs);
     defer g_barrier_shader.unload();
     g_barrier_view_position_loc = rl.getShaderLocation(g_barrier_shader, "viewPosition");
+    drawLoading("LOADING CITY MATERIALS");
     g_facade_textures[0] = try rl.loadTexture("assets/tex/front1.png");
     g_facade_textures[1] = try rl.loadTexture("assets/tex/front4.png");
     defer for (g_facade_textures) |texture| rl.unloadTexture(texture);
@@ -1964,12 +1945,8 @@ pub fn main() !void {
     defer g_roof_shader.unload();
     g_roof_view_position_loc = rl.getShaderLocation(g_roof_shader, "viewPosition");
 
-    drawLoading("LOADING VEHICLE");
-    const player_model = try PlayerModel.init();
-    defer player_model.unload();
-    drawLoading("LOADING TRAFFIC");
-    const traffic_fleet = try TrafficFleet.init(player_model.shader);
-    defer traffic_fleet.unload();
+    const vehicle_catalog = try VehicleCatalog.init();
+    defer vehicle_catalog.unload();
 
     g_wheel = Wheel.init();
     defer g_wheel.deinit();
@@ -1997,6 +1974,7 @@ pub fn main() !void {
     var show_debug = false;
     var cam_mode: u8 = 0;
     var prev_btn3 = false;
+    var selected_vehicle: usize = 0;
 
     main_loop: while (true) {
         if (rl.windowShouldClose()) break;
@@ -2021,13 +1999,25 @@ pub fn main() !void {
                 // === CAR SELECT ===
                 if (rl.isKeyPressed(.escape)) {
                     state = 0;
+                } else if (rl.isKeyPressed(.left)) {
+                    selected_vehicle = (selected_vehicle + vehicle_catalog.models.len - 1) % vehicle_catalog.models.len;
+                } else if (rl.isKeyPressed(.right)) {
+                    selected_vehicle = (selected_vehicle + 1) % vehicle_catalog.models.len;
+                } else if (rl.isMouseButtonPressed(.left)) {
+                    const mouse = rl.getMousePosition();
+                    const arrows = carSelectArrowLayout();
+                    if (rl.checkCollisionPointRec(mouse, arrows.previous)) {
+                        selected_vehicle = (selected_vehicle + vehicle_catalog.models.len - 1) % vehicle_catalog.models.len;
+                    } else if (rl.checkCollisionPointRec(mouse, arrows.next)) {
+                        selected_vehicle = (selected_vehicle + 1) % vehicle_catalog.models.len;
+                    }
                 } else if (rl.isKeyPressed(.enter) or rl.isKeyPressed(.space) or
                     (g_wheel.available and g_wheel.buttons[0]))
                 {
                     state = 2;
                     menu_sel = 0;
                 }
-                drawCarSelect(player_model, garage_yaw, elapsed);
+                drawCarSelect(vehicle_catalog, selected_vehicle, garage_yaw, elapsed);
             },
             2 => {
                 // === MAP SELECT ===
@@ -2115,9 +2105,9 @@ pub fn main() !void {
                 rl.drawMesh(g_road_mesh, g_road_mat, identity);
                 rl.drawMesh(g_barrier_mesh, g_barrier_mat, identity);
                 drawLamps(car.position);
-                player_model.setLightBoost(1.0);
-                drawTraffic(traffic_fleet, elapsed);
-                drawPlayerCar(player_model, car.position, car.yaw);
+                vehicle_catalog.setLightBoost(1.0);
+                drawTraffic(vehicle_catalog, selected_vehicle, elapsed);
+                drawPlayerCar(vehicle_catalog, selected_vehicle, car.position, car.yaw);
                 camera.end();
 
                 const screen_h = rl.getScreenHeight();
@@ -2175,7 +2165,21 @@ fn drawTitleScreen(elapsed: f32) void {
     rl.drawText(hint, cx - @divTrunc(hw, 2), screen_height - 24, 11, color(90, 100, 110, 255));
 }
 
-fn drawCarSelect(player_model: PlayerModel, garage_yaw: f32, elapsed: f32) void {
+const CarSelectArrowLayout = struct {
+    previous: rl.Rectangle,
+    next: rl.Rectangle,
+};
+
+fn carSelectArrowLayout() CarSelectArrowLayout {
+    const button_size: f32 = 54;
+    const y = @as(f32, @floatFromInt(screen_height)) * 0.5 - button_size * 0.5;
+    return .{
+        .previous = .{ .x = 58, .y = y, .width = button_size, .height = button_size },
+        .next = .{ .x = @as(f32, @floatFromInt(screen_width)) - 58 - button_size, .y = y, .width = button_size, .height = button_size },
+    };
+}
+
+fn drawCarSelect(catalog: VehicleCatalog, selected: usize, garage_yaw: f32, elapsed: f32) void {
     beginFrame();
     defer endFrame();
     rl.clearBackground(color(2, 1, 2, 255));
@@ -2206,23 +2210,8 @@ fn drawCarSelect(player_model: PlayerModel, garage_yaw: f32, elapsed: f32) void 
     rl.endBlendMode();
     rl.drawCylinder(.{ .x = 0, .y = 4.25, .z = 0 }, 0.62, 0.62, 0.18, 32, color(242, 188, 153, 255));
     // Car — centered at origin, rotating
-    player_model.setLightBoost(2.35);
-    const angle = (garage_yaw + std.math.pi * 0.5) * 180.0 / std.math.pi;
-    const cx = (player_model.bounds.min.x + player_model.bounds.max.x) * 0.5;
-    const cz = (player_model.bounds.min.z + player_model.bounds.max.z) * 0.5;
-    const rx = cx * @cos(garage_yaw + std.math.pi * 0.5) + cz * @sin(garage_yaw + std.math.pi * 0.5);
-    const rz = -cx * @sin(garage_yaw + std.math.pi * 0.5) + cz * @cos(garage_yaw + std.math.pi * 0.5);
-    player_model.model.drawEx(
-        .{
-            .x = -rx * player_model.scale,
-            .y = 0.15 - player_model.bounds.min.y * player_model.scale,
-            .z = -rz * player_model.scale,
-        },
-        .{ .x = 0, .y = 1, .z = 0 },
-        angle,
-        .{ .x = player_model.scale, .y = player_model.scale, .z = player_model.scale },
-        color(255, 255, 255, 255),
-    );
+    catalog.setLightBoost(2.35);
+    catalog.models[selected].draw(.{ .x = 0, .z = 0 }, garage_yaw, 0.15);
     cam.end();
 
     // 2D overlay
@@ -2233,15 +2222,34 @@ fn drawCarSelect(player_model: PlayerModel, garage_yaw: f32, elapsed: f32) void 
     const hw = rl.measureText(hdr, 14);
     rl.drawText(hdr, cx2 - @divTrunc(hw, 2), 24, 14, color(66, 201, 219, 255));
 
-    // Car name
-    const name: [:0]const u8 = "HONDA CIVIC";
+    const arrows = carSelectArrowLayout();
+    const mouse = rl.getMousePosition();
+    const previous_hovered = rl.checkCollisionPointRec(mouse, arrows.previous);
+    const next_hovered = rl.checkCollisionPointRec(mouse, arrows.next);
+    const previous_color = if (previous_hovered) color(172, 45, 45, 245) else color(57, 22, 27, 225);
+    const next_color = if (next_hovered) color(172, 45, 45, 245) else color(57, 22, 27, 225);
+    const previous_x: i32 = @intFromFloat(arrows.previous.x);
+    const previous_y: i32 = @intFromFloat(arrows.previous.y);
+    const next_x: i32 = @intFromFloat(arrows.next.x);
+    const next_y: i32 = @intFromFloat(arrows.next.y);
+    rl.drawRectangle(previous_x, previous_y, @intFromFloat(arrows.previous.width), @intFromFloat(arrows.previous.height), previous_color);
+    rl.drawRectangle(next_x, next_y, @intFromFloat(arrows.next.width), @intFromFloat(arrows.next.height), next_color);
+    rl.drawText("<", previous_x + 18, previous_y + 11, 28, color(239, 226, 207, 255));
+    rl.drawText(">", next_x + 19, next_y + 11, 28, color(239, 226, 207, 255));
+
+    // Car name and catalog position
+    const name = vehicle_entries[selected].name;
     const nw = rl.measureText(name, 22);
     rl.drawText(name, cx2 - @divTrunc(nw, 2), screen_height - 52, 22, color(224, 237, 239, 255));
+    var count_buf: [24]u8 = undefined;
+    const count = std.fmt.bufPrintZ(&count_buf, "{d:0>2} / {d:0>2}", .{ selected + 1, vehicle_entries.len }) catch "";
+    const count_width = rl.measureText(count, 11);
+    rl.drawText(count, cx2 - @divTrunc(count_width, 2), screen_height - 73, 11, color(205, 126, 48, 255));
 
     // Footer
     const blink = @sin(elapsed * 3.0) > 0;
     if (blink) {
-        const prompt: [:0]const u8 = "ENTER CONFIRM   ESC BACK";
+        const prompt: [:0]const u8 = "LEFT/RIGHT CHOOSE   ENTER CONFIRM   ESC BACK";
         const pw = rl.measureText(prompt, 11);
         rl.drawText(prompt, cx2 - @divTrunc(pw, 2), screen_height - 22, 11, color(90, 100, 110, 255));
     }
