@@ -33,13 +33,6 @@ pub fn build(b: *std.Build) void {
     release_upx.step.dependOn(&release_install.step);
     release_step.dependOn(&release_upx.step);
 
-    const install_assets_rel = b.addInstallDirectory(.{
-        .source_dir = b.path("Release/assets"),
-        .install_dir = .prefix,
-        .install_subdir = "../Release/linux-x86_64/assets",
-    });
-    release_step.dependOn(&install_assets_rel.step);
-
     // --- Windows release bundle (x86_64) ---
     const windows_step = b.step("release-windows", "Build Windows x86_64 release bundle");
     const windows_target = b.resolveTargetQuery(.{
@@ -56,13 +49,6 @@ pub fn build(b: *std.Build) void {
     const windows_upx = b.addSystemCommand(&.{ "upx", "--best", "--lzma", "Release/windows-x86_64/asa-made.exe" });
     windows_upx.step.dependOn(&windows_install.step);
     windows_step.dependOn(&windows_upx.step);
-
-    const windows_assets = b.addInstallDirectory(.{
-        .source_dir = b.path("Release/assets"),
-        .install_dir = .prefix,
-        .install_subdir = "../Release/windows-x86_64/assets",
-    });
-    windows_step.dependOn(&windows_assets.step);
 }
 
 fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {

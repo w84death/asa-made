@@ -450,6 +450,45 @@ fn detachMaterialResources(material: *rl.Material) void {
     material.maps[0].texture.id = rl.gl.rlGetTextureIdDefault();
 }
 
+fn embeddedFile(path: []const u8) ?[]const u8 {
+    const files = [_]struct { path: []const u8, data: []const u8 }{
+        .{ .path = "assets/loading.jpg", .data = embedded_assets.loading_jpg },
+        .{ .path = "assets/title.jpg", .data = embedded_assets.title_jpg },
+        .{ .path = "assets/logo.glb", .data = embedded_assets.logo_glb },
+        .{ .path = "assets/tex/city-ground.jpg", .data = embedded_assets.city_ground_jpg },
+        .{ .path = "assets/tex/tarmac.jpg", .data = embedded_assets.tarmac_jpg },
+        .{ .path = "assets/tex/barrier.jpg", .data = embedded_assets.barrier_jpg },
+        .{ .path = "assets/tex/front1.jpg", .data = embedded_assets.front1_jpg },
+        .{ .path = "assets/tex/front4.jpg", .data = embedded_assets.front4_jpg },
+        .{ .path = "assets/tex/roof.jpg", .data = embedded_assets.roof_jpg },
+        .{ .path = "assets/cars/car_01.glb", .data = embedded_assets.car_01_glb },
+        .{ .path = "assets/cars/car_02.glb", .data = embedded_assets.car_02_glb },
+        .{ .path = "assets/cars/car_03.glb", .data = embedded_assets.car_03_glb },
+        .{ .path = "assets/cars/car_04.glb", .data = embedded_assets.car_04_glb },
+        .{ .path = "assets/cars/car_05.glb", .data = embedded_assets.car_05_glb },
+        .{ .path = "assets/cars/car_06.glb", .data = embedded_assets.car_06_glb },
+        .{ .path = "assets/cars/car_07.glb", .data = embedded_assets.car_07_glb },
+        .{ .path = "assets/cars/car_08.glb", .data = embedded_assets.car_08_glb },
+        .{ .path = "assets/cars/car_09.glb", .data = embedded_assets.car_09_glb },
+    };
+    for (files) |file| {
+        if (std.mem.eql(u8, path, file.path)) return file.data;
+    }
+    return null;
+}
+
+fn loadEmbeddedFile(file_name: [*c]const u8, data_size: [*c]c_uint) callconv(.c) [*c]u8 {
+    const path = std.mem.span(file_name);
+    const data = embeddedFile(path) orelse {
+        data_size[0] = 0;
+        return null;
+    };
+    const memory: [*]u8 = @ptrCast(rl.memAlloc(@intCast(data.len)));
+    @memcpy(memory[0..data.len], data);
+    data_size[0] = @intCast(data.len);
+    return memory;
+}
+
 fn localPoint(center: Vec2, yaw: f32, right: f32, fwd: f32) Vec2 {
     return .{
         .x = center.x + @cos(yaw) * right + @sin(yaw) * fwd,
@@ -983,7 +1022,7 @@ const Car = struct {
         self.drift_amount = 0;
     }
 
-    fn update(self: *Car, dt: f32) void {
+    fn update(self: *Car, dt: f32, vehicle_half_width: f32) void {
         // Keyboard input
         const kb_throttle: f32 = if (rl.isKeyDown(.w) or rl.isKeyDown(.up)) 1.0 else 0.0;
         const kb_brake: f32 = if (rl.isKeyDown(.s) or rl.isKeyDown(.down)) 1.0 else 0.0;
@@ -1062,7 +1101,7 @@ const Car = struct {
 
         const nearest = nearestTrack(self.position);
         const lateral = dot(.{ .x = self.position.x - nearest.center.x, .z = self.position.z - nearest.center.z }, nearest.normal);
-        const limit = road_half_width - 1.1;
+        const limit = road_half_width - vehicle_half_width;
         self.collided = false;
         if (@abs(lateral) > limit) {
             const excess = lateral - std.math.clamp(lateral, -limit, limit);
@@ -1105,7 +1144,7 @@ const CameraRig = struct {
         self.yaw = car.yaw;
     }
 
-    fn update(self: *CameraRig, car: Car, dt: f32) rl.Camera3D {
+    fn update(self: *CameraRig, car: Car, vehicle: VehicleModel, dt: f32) rl.Camera3D {
         const offset = Vec2{ .x = car.position.x - self.anchor.x, .z = car.position.z - self.anchor.z };
         const ol = vecLength(offset);
         const dead_zone: f32 = 0.72;
@@ -1117,16 +1156,17 @@ const CameraRig = struct {
         const yaw_delta = @mod(car.yaw - self.yaw + std.math.pi, tau) - std.math.pi;
         self.yaw += yaw_delta * std.math.clamp(dt * 8.5, 0.0, 1.0);
         const cf = Vec2{ .x = @sin(self.yaw), .z = @cos(self.yaw) };
-        const cam_dist = 10.5 - std.math.clamp(@abs(car.speed) * 0.018, 0.0, 1.5);
+        const cam_dist = vehicle.length * 0.5 + 6.5 - std.math.clamp(@abs(car.speed) * 0.014, 0.0, 1.1);
+        const camera_height = road_y + vehicle.height + 2.2;
         return .{
             .position = .{
                 .x = self.anchor.x - cf.x * cam_dist,
-                .y = road_y + 5.2,
+                .y = camera_height,
                 .z = self.anchor.z - cf.z * cam_dist,
             },
             .target = .{
                 .x = self.anchor.x + cf.x * 5.5,
-                .y = road_y + 1.15,
+                .y = road_y + vehicle.height * 0.52,
                 .z = self.anchor.z + cf.z * 5.5,
             },
             .up = .{ .x = 0, .y = 1, .z = 0 },
@@ -1160,6 +1200,8 @@ const VehicleModel = struct {
     scale: f32,
     axis_rotation: f32,
     length: f32,
+    width: f32,
+    height: f32,
 
     fn init(path: [:0]const u8, shader: rl.Shader) !VehicleModel {
         var model = try rl.loadModel(path);
@@ -1172,13 +1214,17 @@ const VehicleModel = struct {
         const bounds = rl.getModelBoundingBox(model);
         const x_span = bounds.max.x - bounds.min.x;
         const z_span = bounds.max.z - bounds.min.z;
-        const desired_length: f32 = 4.55;
+        const length = @max(x_span, z_span);
+        const width = @min(x_span, z_span);
+        const height = bounds.max.y - bounds.min.y;
         return .{
             .model = model,
             .bounds = bounds,
-            .scale = desired_length / @max(x_span, z_span),
+            .scale = 1.0,
             .axis_rotation = if (x_span >= z_span) std.math.pi * 0.5 else 0.0,
-            .length = desired_length,
+            .length = length,
+            .width = width,
+            .height = height,
         };
     }
 
@@ -1247,12 +1293,68 @@ const VehicleCatalog = struct {
     }
 };
 
+const LogoModel = struct {
+    model: rl.Model,
+    shader: rl.Shader,
+    bounds: rl.BoundingBox,
+    scale: f32,
+
+    fn init() !LogoModel {
+        var model = try rl.loadModel("assets/logo.glb");
+        errdefer model.unload();
+        const shader = try rl.loadShaderFromMemory(car_vs, car_fs);
+        errdefer shader.unload();
+        var material_index: usize = 0;
+        while (material_index < @as(usize, @intCast(model.materialCount))) : (material_index += 1) {
+            model.materials[material_index].shader = shader;
+        }
+        const light_boost_loc = rl.getShaderLocation(shader, "lightBoost");
+        var light_boost: f32 = 1.85;
+        rl.setShaderValue(shader, light_boost_loc, &light_boost, .float);
+
+        const bounds = rl.getModelBoundingBox(model);
+        const width = @max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y);
+        return .{ .model = model, .shader = shader, .bounds = bounds, .scale = 5.2 / width };
+    }
+
+    fn unload(self: LogoModel) void {
+        var material_index: usize = 0;
+        while (material_index < @as(usize, @intCast(self.model.materialCount))) : (material_index += 1) {
+            self.model.materials[material_index].shader = defaultShader();
+        }
+        self.model.unload();
+        self.shader.unload();
+    }
+
+    fn draw(self: LogoModel, elapsed: f32) void {
+        const yaw = 180.0 + @sin(elapsed * 0.72) * 8.0;
+        const yaw_rad = yaw * std.math.pi / 180.0;
+        const cx = (self.bounds.min.x + self.bounds.max.x) * 0.5;
+        const cy = (self.bounds.min.y + self.bounds.max.y) * 0.5;
+        const cz = (self.bounds.min.z + self.bounds.max.z) * 0.5;
+        const rx = cx * @cos(yaw_rad) + cz * @sin(yaw_rad);
+        const rz = -cx * @sin(yaw_rad) + cz * @cos(yaw_rad);
+        self.model.drawEx(
+            .{
+                .x = -rx * self.scale,
+                .y = @sin(elapsed * 0.9) * 0.035 - cy * self.scale,
+                .z = -rz * self.scale,
+            },
+            .{ .x = 0, .y = 1, .z = 0 },
+            yaw,
+            .{ .x = self.scale, .y = self.scale, .z = self.scale },
+            color(255, 255, 255, 255),
+        );
+    }
+};
+
 // === Drawing ===
-fn drawHeadlightWash(position: Vec2, yaw: f32) void {
-    const nl = localPoint(position, yaw, -0.72, 2.0);
-    const nr = localPoint(position, yaw, 0.72, 2.0);
-    const fl = localPoint(position, yaw, -3.6, 14.5);
-    const fr = localPoint(position, yaw, 3.6, 14.5);
+fn drawHeadlightWash(position: Vec2, yaw: f32, vehicle_length: f32) void {
+    const nose = vehicle_length * 0.5;
+    const nl = localPoint(position, yaw, -0.72, nose);
+    const nr = localPoint(position, yaw, 0.72, nose);
+    const fl = localPoint(position, yaw, -3.6, nose + 12.5);
+    const fr = localPoint(position, yaw, 3.6, nose + 12.5);
     const near = color(255, 226, 177, 35);
     const far = color(255, 183, 94, 0);
     rl.gl.rlBegin(rl.gl.rl_triangles);
@@ -1290,21 +1392,25 @@ fn drawSkybox() void {
 }
 
 fn drawPlayerCar(catalog: VehicleCatalog, selected: usize, position: Vec2, yaw: f32) void {
-    drawHeadlightWash(position, yaw);
     catalog.setLightBoost(1.0);
     const vehicle = catalog.models[selected];
+    drawHeadlightWash(position, yaw, vehicle.length);
     vehicle.draw(position, yaw, road_y + 0.14);
+    const lamp_height = road_y + std.math.clamp(vehicle.height * 0.34, 0.5, 1.1);
+    const lamp_half_width = std.math.clamp(vehicle.width * 0.32, 0.52, 0.95);
     const nose = localPoint(position, yaw, 0, vehicle.length * 0.5);
-    for ([_]f32{ -0.62, 0.62 }) |side| {
+    for ([_]f32{ -1.0, 1.0 }) |sign| {
+        const side = sign * lamp_half_width;
         const lamp = localPoint(nose, yaw, side, 0);
-        rl.drawSphere(v3(lamp, road_y + 0.58), 0.2, color(255, 227, 177, 105));
-        rl.drawSphere(v3(lamp, road_y + 0.58), 0.11, color(255, 249, 222, 255));
+        rl.drawSphere(v3(lamp, lamp_height), 0.2, color(255, 227, 177, 105));
+        rl.drawSphere(v3(lamp, lamp_height), 0.11, color(255, 249, 222, 255));
     }
     const tail = localPoint(position, yaw, 0, -vehicle.length * 0.5);
-    for ([_]f32{ -0.68, 0.68 }) |side| {
+    for ([_]f32{ -1.0, 1.0 }) |sign| {
+        const side = sign * lamp_half_width;
         const lamp = localPoint(tail, yaw, side, 0);
-        rl.drawSphere(v3(lamp, road_y + 0.55), 0.22, color(255, 24, 19, 90));
-        rl.drawSphere(v3(lamp, road_y + 0.55), 0.11, color(255, 61, 38, 255));
+        rl.drawSphere(v3(lamp, lamp_height), 0.22, color(255, 24, 19, 90));
+        rl.drawSphere(v3(lamp, lamp_height), 0.11, color(255, 61, 38, 255));
     }
 }
 
@@ -1367,17 +1473,21 @@ fn drawLamps(car_pos: Vec2) void {
     }
 }
 
-fn drawTrafficLights(position: Vec2, yaw: f32, vehicle_length: f32) void {
-    drawHeadlightWash(position, yaw);
-    const nose = localPoint(position, yaw, 0, vehicle_length * 0.5);
-    for ([_]f32{ -0.62, 0.62 }) |side| {
+fn drawTrafficLights(position: Vec2, yaw: f32, vehicle: VehicleModel) void {
+    drawHeadlightWash(position, yaw, vehicle.length);
+    const lamp_height = road_y + std.math.clamp(vehicle.height * 0.34, 0.5, 1.1);
+    const lamp_half_width = std.math.clamp(vehicle.width * 0.32, 0.52, 0.95);
+    const nose = localPoint(position, yaw, 0, vehicle.length * 0.5);
+    for ([_]f32{ -1.0, 1.0 }) |sign| {
+        const side = sign * lamp_half_width;
         const lamp = localPoint(nose, yaw, side, 0);
-        rl.drawSphere(v3(lamp, road_y + 0.55), 0.11, color(255, 241, 208, 255));
+        rl.drawSphere(v3(lamp, lamp_height), 0.11, color(255, 241, 208, 255));
     }
-    const tail = localPoint(position, yaw, 0, -vehicle_length * 0.5);
-    for ([_]f32{ -0.68, 0.68 }) |side| {
+    const tail = localPoint(position, yaw, 0, -vehicle.length * 0.5);
+    for ([_]f32{ -1.0, 1.0 }) |sign| {
+        const side = sign * lamp_half_width;
         const lamp = localPoint(tail, yaw, side, 0);
-        rl.drawSphere(v3(lamp, road_y + 0.5), 0.11, color(255, 48, 31, 255));
+        rl.drawSphere(v3(lamp, lamp_height), 0.11, color(255, 48, 31, 255));
     }
 }
 
@@ -1398,7 +1508,7 @@ fn drawTraffic(catalog: VehicleCatalog, selected: usize, elapsed: f32) void {
         if (vehicle_index >= selected) vehicle_index += 1;
         const vehicle = catalog.models[vehicle_index];
         vehicle.draw(pos, yaw, road_y + 0.14);
-        drawTrafficLights(pos, yaw, vehicle.length);
+        drawTrafficLights(pos, yaw, vehicle);
     }
 }
 
@@ -1609,18 +1719,18 @@ var g_map_loaded = false;
 
 // === Audio ===
 const SongEntry = struct {
-    path: [:0]const u8,
     name: [:0]const u8,
+    data: []const u8,
 };
 
 const song_entries = [_]SongEntry{
-    .{ .path = "assets/music/Pole Position Pulse.mp3", .name = "Pole Position Pulse" },
-    .{ .path = "assets/music/Rally House.mp3", .name = "Rally House" },
-    .{ .path = "assets/music/Midnight Rally.mp3", .name = "Midnight Rally" },
-    .{ .path = "assets/music/Osaka Loop.mp3", .name = "Osaka Loop" },
-    .{ .path = "assets/music/Osaka Loop 2.mp3", .name = "Osaka Loop 2" },
-    .{ .path = "assets/music/Poznań Afterglow.mp3", .name = "Poznan Afterglow" },
-    .{ .path = "assets/music/Poznań Afterglow 2.mp3", .name = "Poznan Afterglow 2" },
+    .{ .name = "Pole Position Pulse", .data = embedded_assets.pole_position_pulse_mp3 },
+    .{ .name = "Rally House", .data = embedded_assets.rally_house_mp3 },
+    .{ .name = "Midnight Rally", .data = embedded_assets.midnight_rally_mp3 },
+    .{ .name = "Osaka Loop", .data = embedded_assets.osaka_loop_mp3 },
+    .{ .name = "Osaka Loop 2", .data = embedded_assets.osaka_loop_2_mp3 },
+    .{ .name = "Poznan Afterglow", .data = embedded_assets.poznan_afterglow_mp3 },
+    .{ .name = "Poznan Afterglow 2", .data = embedded_assets.poznan_afterglow_2_mp3 },
 };
 
 const MAX_SONGS = song_entries.len;
@@ -1648,7 +1758,7 @@ fn loadRadioPlaylist() void {
 
     for (song_entries) |entry| {
         if (g_song_count >= MAX_SONGS) break;
-        g_songs[g_song_count] = rl.loadMusicStream(entry.path) catch null;
+        g_songs[g_song_count] = rl.loadMusicStreamFromMemory(".mp3", entry.data) catch null;
         if (g_songs[g_song_count] != null) g_song_count += 1;
     }
 }
@@ -1906,6 +2016,7 @@ pub fn main() !void {
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true });
     rl.initWindow(screen_width, screen_height, "ASA MADE");
     defer rl.closeWindow();
+    rl.setLoadFileDataCallback(loadEmbeddedFile);
     rl.setTargetFPS(60);
     rl.gl.rlSetClipPlanes(0.05, 4000.0);
     drawBootstrapLoading();
@@ -1978,6 +2089,9 @@ pub fn main() !void {
     defer g_roof_shader.unload();
     g_roof_view_position_loc = rl.getShaderLocation(g_roof_shader, "viewPosition");
 
+    drawLoading("LOADING LOGO");
+    const logo_model = try LogoModel.init();
+    defer logo_model.unload();
     const vehicle_catalog = try VehicleCatalog.init();
     defer vehicle_catalog.unload();
 
@@ -1990,7 +2104,7 @@ pub fn main() !void {
     rl.initAudioDevice();
     defer rl.closeAudioDevice();
     g_audio_ready = true;
-    g_menu_music = rl.loadMusicStream("assets/music/Pole Position Pulse.mp3") catch null;
+    g_menu_music = rl.loadMusicStreamFromMemory(".mp3", embedded_assets.pole_position_pulse_mp3) catch null;
     defer if (g_menu_music) |m| rl.unloadMusicStream(m);
     startMenuMusic();
     defer stopMenuMusic();
@@ -2026,7 +2140,7 @@ pub fn main() !void {
                 {
                     state = 1;
                 }
-                drawTitleScreen(elapsed);
+                drawTitleScreen(logo_model, elapsed);
             },
             1 => {
                 // === CAR SELECT ===
@@ -2094,22 +2208,25 @@ pub fn main() !void {
                     car.reset();
                     camera_rig.reset(car);
                 }
-                car.update(dt);
+                const selected_model = vehicle_catalog.models[selected_vehicle];
+                car.update(dt, selected_model.width * 0.5);
                 g_ff.update(car.speed, elapsed, car.collided);
 
                 const camera = switch (cam_mode) {
-                    0 => camera_rig.update(car, dt),
+                    0 => camera_rig.update(car, selected_model, dt),
                     else => blk: {
                         const fwd = Vec2{ .x = @sin(car.yaw), .z = @cos(car.yaw) };
+                        const bumper_offset = selected_model.length * 0.5 + 0.35;
+                        const bumper_height = road_y + std.math.clamp(selected_model.height * 0.58, 0.8, 1.8);
                         break :blk rl.Camera3D{
                             .position = .{
-                                .x = car.position.x + fwd.x * 1.8,
-                                .y = road_y + 1.4,
-                                .z = car.position.z + fwd.z * 1.8,
+                                .x = car.position.x + fwd.x * bumper_offset,
+                                .y = bumper_height,
+                                .z = car.position.z + fwd.z * bumper_offset,
                             },
                             .target = .{
                                 .x = car.position.x + fwd.x * 20.0,
-                                .y = road_y + 1.2,
+                                .y = bumper_height - 0.1,
                                 .z = car.position.z + fwd.z * 20.0,
                             },
                             .up = .{ .x = 0, .y = 1, .z = 0 },
@@ -2172,7 +2289,7 @@ fn drawTitleBackground() void {
     );
 }
 
-fn drawTitleScreen(elapsed: f32) void {
+fn drawTitleScreen(logo: LogoModel, elapsed: f32) void {
     beginFrame();
     defer endFrame();
     rl.clearBackground(color(4, 4, 3, 255));
@@ -2182,15 +2299,29 @@ fn drawTitleScreen(elapsed: f32) void {
     const cx = screen_width / 2;
     const cy = screen_height / 2;
 
-    // Title
-    rl.drawText("ASA MADE", cx - 90, cy - 70, 30, color(224, 237, 239, 255));
+    rl.drawCircleGradient(
+        .{ .x = @floatFromInt(cx), .y = @floatFromInt(cy) },
+        260,
+        color(127, 23, 27, 50),
+        color(20, 3, 6, 0),
+    );
+    const logo_camera = rl.Camera3D{
+        .position = .{ .x = 0, .y = 0, .z = -8 },
+        .target = .{ .x = 0, .y = 0, .z = 0 },
+        .up = .{ .x = 0, .y = 1, .z = 0 },
+        .fovy = 38,
+        .projection = .perspective,
+    };
+    logo_camera.begin();
+    logo.draw(elapsed);
+    logo_camera.end();
 
     // Blinking prompt
     const blink = @sin(elapsed * 3.0) > 0;
     if (blink) {
         const text: [:0]const u8 = "PRESS BUTTON TO START";
         const tw = rl.measureText(text, 16);
-        rl.drawText(text, cx - @divTrunc(tw, 2), cy + 10, 16, color(31, 190, 217, 255));
+        rl.drawText(text, cx - @divTrunc(tw, 2), screen_height - 54, 16, color(31, 190, 217, 255));
     }
 
     const hint: [:0]const u8 = "ESC TO QUIT";

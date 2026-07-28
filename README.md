@@ -25,4 +25,4 @@ Cross-compile a self-contained Windows x86_64 folder from Linux:
 zig build release-windows
 ```
 
-Run `Release/windows-x86_64/asa-made.exe` with `Release/windows-x86_64/assets/` beside it.
+Run `Release/windows-x86_64/asa-made.exe`. All runtime assets are embedded in the executable.
