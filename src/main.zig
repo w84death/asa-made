@@ -277,6 +277,23 @@ const road_fs =
     \\}
 ;
 
+const barrier_fs =
+    \\#version 330
+    \\in vec2 fragTexCoord;
+    \\in vec4 fragColor;
+    \\in vec3 fragPosition;
+    \\uniform sampler2D texture0;
+    \\uniform vec4 colDiffuse;
+    \\uniform vec3 viewPosition;
+    \\out vec4 finalColor;
+    \\void main() {
+    \\    vec4 surface = texture(texture0, fragTexCoord) * fragColor * colDiffuse;
+    \\    float distanceFog = smoothstep(48.0, 235.0, distance(viewPosition.xz, fragPosition.xz));
+    \\    surface.rgb = mix(surface.rgb, vec3(0.105, 0.086, 0.058), distanceFog * 0.72);
+    \\    finalColor = surface;
+    \\}
+;
+
 const car_vs =
     \\#version 330
     \\in vec3 vertexPosition;
@@ -412,6 +429,8 @@ var g_arena: std.heap.ArenaAllocator = undefined;
 var g_flat_shader: rl.Shader = undefined;
 var g_road_mesh: rl.Mesh = undefined;
 var g_road_mat: rl.Material = undefined;
+var g_barrier_mesh: rl.Mesh = undefined;
+var g_barrier_mat: rl.Material = undefined;
 var g_bldg_mesh: rl.Mesh = undefined;
 var g_bldg_mat: rl.Material = undefined;
 var g_pool_mesh: rl.Mesh = undefined;
@@ -427,6 +446,9 @@ var g_ground_view_position_loc: i32 = -1;
 var g_tarmac_texture: rl.Texture2D = undefined;
 var g_road_shader: rl.Shader = undefined;
 var g_road_view_position_loc: i32 = -1;
+var g_barrier_texture: rl.Texture2D = undefined;
+var g_barrier_shader: rl.Shader = undefined;
+var g_barrier_view_position_loc: i32 = -1;
 
 fn beginFrame() void {
     rl.beginDrawing();
@@ -732,18 +754,6 @@ fn bakeRoadMesh() !void {
         const texture_u1 = texture_u0 + vecLength(.{ .x = p1.x - p0.x, .z = p1.z - p0.z }) / 56.0;
         try mb.triUv(in0.x, road_y, in0.z, texture_u0, 0.34, in1.x, road_y, in1.z, texture_u1, 0.34, out1.x, road_y, out1.z, texture_u1, 0.66, asphalt0, asphalt1, asphalt1);
         try mb.triUv(in0.x, road_y, in0.z, texture_u0, 0.34, out1.x, road_y, out1.z, texture_u1, 0.66, out0.x, road_y, out0.z, texture_u0, 0.66, asphalt0, asphalt1, asphalt0);
-
-        // Shoulder lines
-        const white = color(198, 198, 181, 255);
-        const amber = color(194, 119, 42, 255);
-        try stripQuad(&mb, p0, p1, n0, n1, -road_half_width + 0.35, 0.18, white);
-        try stripQuad(&mb, p0, p1, n0, n1, road_half_width - 0.35, 0.18, amber);
-
-        // Dashed lane lines
-        if (i % 2 == 0) {
-            try stripQuad(&mb, p0, p1, n0, n1, -2.2, 0.14, white);
-            try stripQuad(&mb, p0, p1, n0, n1, 2.2, 0.14, white);
-        }
     }
 
     const built = try mb.build(g_road_shader);
@@ -752,14 +762,62 @@ fn bakeRoadMesh() !void {
     g_road_mat.maps[0].texture = g_tarmac_texture;
 }
 
-fn stripQuad(mb: *MeshBuilder, p0: Vec2, p1: Vec2, n0: Vec2, n1: Vec2, offset: f32, w: f32, c: rl.Color) !void {
-    const a = add(p0, scale(n0, offset - w * 0.5));
-    const b = add(p1, scale(n1, offset - w * 0.5));
-    const cc = add(p1, scale(n1, offset + w * 0.5));
-    const d = add(p0, scale(n0, offset + w * 0.5));
-    const y = road_y + 0.04;
-    try mb.tri(a.x, y, a.z, b.x, y, b.z, cc.x, y, cc.z, c, c, c);
-    try mb.tri(a.x, y, a.z, cc.x, y, cc.z, d.x, y, d.z, c, c, c);
+fn barrierQuad(mb: *MeshBuilder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, tex_u0: f32, tex_u1: f32, tint: rl.Color) !void {
+    try mb.triUv(a.x, a.y, a.z, tex_u0, 1.0, b.x, b.y, b.z, tex_u1, 1.0, c.x, c.y, c.z, tex_u1, 0.0, tint, tint, tint);
+    try mb.triUv(a.x, a.y, a.z, tex_u0, 1.0, c.x, c.y, c.z, tex_u1, 0.0, d.x, d.y, d.z, tex_u0, 0.0, tint, tint, tint);
+    try mb.triUv(a.x, a.y, a.z, tex_u0, 1.0, c.x, c.y, c.z, tex_u1, 0.0, b.x, b.y, b.z, tex_u1, 1.0, tint, tint, tint);
+    try mb.triUv(a.x, a.y, a.z, tex_u0, 1.0, d.x, d.y, d.z, tex_u0, 0.0, c.x, c.y, c.z, tex_u1, 0.0, tint, tint, tint);
+}
+
+fn bakeBarrierMesh() !void {
+    var mb = MeshBuilder.init(std.heap.c_allocator);
+    defer mb.deinit();
+    const n = g_spline.len;
+    const segment_count = if (g_route_closed) n else n - 1;
+    const look: usize = 6;
+    const barrier_height: f32 = 1.55;
+    const barrier_thickness: f32 = 0.55;
+    const tint = color(205, 194, 174, 255);
+
+    var i: usize = 0;
+    while (i < segment_count) : (i += 1) {
+        const prev_i = if (i >= look) i - look else if (g_route_closed) n + i - look else 0;
+        const next_i = if (i + look < n) i + look else if (g_route_closed) (i + look) % n else n - 1;
+        const prev_tangent = g_spline[prev_i].tangent;
+        const next_tangent = g_spline[next_i].tangent;
+        const curvature = @abs(prev_tangent.x * next_tangent.z - prev_tangent.z * next_tangent.x);
+        if (curvature < 0.055) continue;
+
+        const sp0 = g_spline[i];
+        const sp1 = g_spline[(i + 1) % n];
+        const segment_length = vecLength(.{ .x = sp1.pos.x - sp0.pos.x, .z = sp1.pos.z - sp0.pos.z });
+        const tex_u0 = sp0.dist / 7.5;
+        const tex_u1 = tex_u0 + segment_length / 7.5;
+
+        for ([_]f32{ -1.0, 1.0 }) |side| {
+            const inner0 = add(sp0.pos, scale(sp0.normal, side * road_half_width));
+            const inner1 = add(sp1.pos, scale(sp1.normal, side * road_half_width));
+            const outer0 = add(sp0.pos, scale(sp0.normal, side * (road_half_width + barrier_thickness)));
+            const outer1 = add(sp1.pos, scale(sp1.normal, side * (road_half_width + barrier_thickness)));
+            const inner0_bottom = v3(inner0, road_y);
+            const inner1_bottom = v3(inner1, road_y);
+            const outer0_bottom = v3(outer0, road_y);
+            const outer1_bottom = v3(outer1, road_y);
+            const inner0_top = v3(inner0, road_y + barrier_height);
+            const inner1_top = v3(inner1, road_y + barrier_height);
+            const outer0_top = v3(outer0, road_y + barrier_height);
+            const outer1_top = v3(outer1, road_y + barrier_height);
+
+            try barrierQuad(&mb, inner0_bottom, inner1_bottom, inner1_top, inner0_top, tex_u0, tex_u1, tint);
+            try barrierQuad(&mb, outer1_bottom, outer0_bottom, outer0_top, outer1_top, tex_u0, tex_u1, tint);
+            try barrierQuad(&mb, inner0_top, inner1_top, outer1_top, outer0_top, tex_u0, tex_u1, tint);
+        }
+    }
+
+    const built = try mb.build(g_barrier_shader);
+    g_barrier_mesh = built.mesh;
+    g_barrier_mat = built.mat;
+    g_barrier_mat.maps[0].texture = g_barrier_texture;
 }
 
 // === Building mesh baking ===
@@ -1614,6 +1672,9 @@ fn startMap(map_idx: usize) !void {
     drawLoading("BAKING ROAD");
     try bakeRoadMesh();
 
+    drawLoading("BAKING BARRIERS");
+    try bakeBarrierMesh();
+
     drawLoading("BAKING BUILDINGS");
     try bakeBuildingMesh();
 
@@ -1631,6 +1692,8 @@ fn endMap() void {
     unloadMusic();
     rl.unloadMesh(g_road_mesh);
     g_road_mat.unload();
+    rl.unloadMesh(g_barrier_mesh);
+    g_barrier_mat.unload();
     rl.unloadMesh(g_bldg_mesh);
     g_bldg_mat.unload();
     rl.unloadMesh(g_pool_mesh);
@@ -1679,6 +1742,14 @@ pub fn main() !void {
     g_road_shader = try rl.loadShaderFromMemory(road_vs, road_fs);
     defer g_road_shader.unload();
     g_road_view_position_loc = rl.getShaderLocation(g_road_shader, "viewPosition");
+    g_barrier_texture = try rl.loadTexture("assets/barrier.png");
+    defer rl.unloadTexture(g_barrier_texture);
+    rl.genTextureMipmaps(&g_barrier_texture);
+    rl.setTextureWrap(g_barrier_texture, .repeat);
+    rl.setTextureFilter(g_barrier_texture, .trilinear);
+    g_barrier_shader = try rl.loadShaderFromMemory(road_vs, barrier_fs);
+    defer g_barrier_shader.unload();
+    g_barrier_view_position_loc = rl.getShaderLocation(g_barrier_shader, "viewPosition");
 
     drawLoading("LOADING VEHICLE");
     const player_model = try PlayerModel.init();
@@ -1816,11 +1887,13 @@ pub fn main() !void {
                 rl.setShaderValue(g_flat_shader, g_view_position_loc, &view_position, .vec3);
                 rl.setShaderValue(g_ground_shader, g_ground_view_position_loc, &view_position, .vec3);
                 rl.setShaderValue(g_road_shader, g_road_view_position_loc, &view_position, .vec3);
+                rl.setShaderValue(g_barrier_shader, g_barrier_view_position_loc, &view_position, .vec3);
 
                 camera.begin();
                 rl.drawMesh(g_ground_mesh, g_ground_mat, identity);
                 rl.drawMesh(g_bldg_mesh, g_bldg_mat, identity);
                 rl.drawMesh(g_road_mesh, g_road_mat, identity);
+                rl.drawMesh(g_barrier_mesh, g_barrier_mat, identity);
                 rl.beginBlendMode(.alpha);
                 rl.drawMesh(g_pool_mesh, g_pool_mat, identity);
                 rl.endBlendMode();
