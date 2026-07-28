@@ -16,7 +16,6 @@ pub fn build(b: *std.Build) void {
 
     const exe = addExe(b, "asa-made", target, optimize);
     b.installArtifact(exe);
-    installAssets(b);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -27,15 +26,39 @@ pub fn build(b: *std.Build) void {
     // --- Release build (Linux x86_64) ---
     const release_step = b.step("release", "Build optimized release binary");
     const release_exe = addExe(b, "asa-made", b.graph.host, .ReleaseFast);
-    const release_install = b.addInstallArtifact(release_exe, .{});
+    const release_install = b.addInstallArtifact(release_exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../Release/linux-x86_64" } },
+    });
     release_step.dependOn(&release_install.step);
 
     const install_assets_rel = b.addInstallDirectory(.{
-        .source_dir = b.path("assets"),
-        .install_dir = .bin,
-        .install_subdir = "assets",
+        .source_dir = b.path("Release/assets"),
+        .install_dir = .prefix,
+        .install_subdir = "../Release/linux-x86_64/assets",
     });
     release_step.dependOn(&install_assets_rel.step);
+
+    // --- Windows release bundle (x86_64) ---
+    const windows_step = b.step("release-windows", "Build Windows x86_64 release bundle");
+    const windows_target = b.resolveTargetQuery(.{
+        .cpu_arch = .x86_64,
+        .os_tag = .windows,
+        .abi = .gnu,
+    });
+    const windows_exe = addExe(b, "asa-made", windows_target, .ReleaseFast);
+    windows_exe.subsystem = .Windows;
+    const windows_install = b.addInstallArtifact(windows_exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../Release/windows-x86_64" } },
+        .pdb_dir = .disabled,
+    });
+    windows_step.dependOn(&windows_install.step);
+
+    const windows_assets = b.addInstallDirectory(.{
+        .source_dir = b.path("Release/assets"),
+        .install_dir = .prefix,
+        .install_subdir = "../Release/windows-x86_64/assets",
+    });
+    windows_step.dependOn(&windows_assets.step);
 }
 
 fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
@@ -120,7 +143,7 @@ fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget,
         .link_libc = true,
     });
     const embedded_assets_mod = b.createModule(.{
-        .root_source_file = b.path("assets/embedded.zig"),
+        .root_source_file = b.path("Release/assets/embedded.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -133,15 +156,6 @@ fn addExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarget,
         .name = exe_name,
         .root_module = exe_mod,
     });
-}
-
-fn installAssets(b: *std.Build) void {
-    const install_assets = b.addInstallDirectory(.{
-        .source_dir = b.path("assets"),
-        .install_dir = .bin,
-        .install_subdir = "assets",
-    });
-    b.getInstallStep().dependOn(&install_assets.step);
 }
 
 fn linkPlatformLibs(mod: *std.Build.Module, os_tag: std.Target.Os.Tag) void {

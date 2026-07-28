@@ -1,16 +1,18 @@
 const std = @import("std");
 const rl = @import("raylib");
 const embedded_assets = @import("embedded_assets");
+const builtin = @import("builtin");
+const target_is_linux = builtin.os.tag == .linux;
 
 // === Linux input headers ===
-const jsy = @cImport({
+const jsy = if (target_is_linux) @cImport({
     @cInclude("fcntl.h");
     @cInclude("unistd.h");
-});
-const ev = @cImport({
+}) else struct {};
+const ev = if (target_is_linux) @cImport({
     @cInclude("sys/ioctl.h");
     @cInclude("linux/input.h");
-});
+}) else struct {};
 
 const JS_EVENT_AXIS: u8 = 0x02;
 const JS_EVENT_BUTTON: u8 = 0x01;
@@ -30,15 +32,18 @@ const Wheel = struct {
     available: bool = false,
 
     fn init() Wheel {
+        if (comptime !target_is_linux) return .{};
         const fd = jsy.open("/dev/input/js0", jsy.O_RDONLY | jsy.O_NONBLOCK);
         return .{ .fd = fd, .available = fd >= 0 };
     }
 
     fn deinit(self: *Wheel) void {
+        if (comptime !target_is_linux) return;
         if (self.available) _ = jsy.close(self.fd);
     }
 
     fn poll(self: *Wheel) void {
+        if (comptime !target_is_linux) return;
         if (!self.available) return;
         var event: JsEvent = undefined;
         const sz: usize = @sizeOf(JsEvent);
@@ -75,14 +80,16 @@ const FF_CONSTANT: u16 = 0x52;
 const FF_GAIN: u16 = 0x60;
 const FF_AUTOCENTER: u16 = 0x61;
 const EV_FF: u16 = 0x15;
+const FfEffect = if (target_is_linux) ev.struct_ff_effect else u8;
 
 const ForceFeedback = struct {
     fd: c_int = -1,
     available: bool = false,
-    effect: ev.struct_ff_effect = std.mem.zeroes(ev.struct_ff_effect),
+    effect: FfEffect = std.mem.zeroes(FfEffect),
     collision_force: f32 = 0,
 
     fn init() ForceFeedback {
+        if (comptime !target_is_linux) return .{};
         var self = ForceFeedback{};
 
         // Scan for evdev device with FF support (EV_FF = bit 21)
@@ -123,6 +130,7 @@ const ForceFeedback = struct {
     }
 
     fn deinit(self: *ForceFeedback) void {
+        if (comptime !target_is_linux) return;
         if (!self.available) return;
         self.writeFF(EV_FF, 0); // stop constant
         if (self.effect.id >= 0) _ = ev.ioctl(self.fd, EVIOCRMFF, self.effect.id);
@@ -131,6 +139,7 @@ const ForceFeedback = struct {
     }
 
     fn writeFF(self: ForceFeedback, code: u16, value: i32) void {
+        if (comptime !target_is_linux) return;
         var ie: ev.struct_input_event = std.mem.zeroes(ev.struct_input_event);
         ie.type = EV_FF;
         ie.code = if (self.effect.id >= 0 and code == EV_FF) @intCast(self.effect.id) else code;
@@ -139,6 +148,7 @@ const ForceFeedback = struct {
     }
 
     fn update(self: *ForceFeedback, speed: f32, time: f32, collided: bool) void {
+        if (comptime !target_is_linux) return;
         if (!self.available) return;
 
         var level: f32 = 0;
