@@ -1187,6 +1187,8 @@ pub fn main() !void {
     var camera_rig = CameraRig{ .anchor = start.pos, .yaw = car.yaw };
     var elapsed: f32 = 0;
     var show_debug = false;
+    var cam_mode: u8 = 0; // 0 = chase, 1 = hood
+    var prev_btn3 = false;
 
     g_wheel = Wheel.init();
     defer g_wheel.deinit();
@@ -1200,14 +1202,43 @@ pub fn main() !void {
         elapsed += dt;
         g_wheel.poll();
 
+        // Toggle camera on wheel button 3 (rising edge)
+        if (g_wheel.available and g_wheel.buttons[3] and !prev_btn3) {
+            cam_mode = if (cam_mode == 0) 1 else 0;
+        }
+        prev_btn3 = g_wheel.available and g_wheel.buttons[3];
+
         if (rl.isKeyPressed(.tab)) show_debug = !show_debug;
+        if (rl.isKeyPressed(.c)) cam_mode = if (cam_mode == 0) 1 else 0;
         if (rl.isKeyPressed(.r) or (g_wheel.available and g_wheel.buttons[2])) {
             car.reset();
             camera_rig.reset(car);
         }
         car.update(dt);
         g_ff.update(car.speed, elapsed, car.collided);
-        const camera = camera_rig.update(car, dt);
+
+        const camera = switch (cam_mode) {
+            0 => camera_rig.update(car, dt),
+            else => blk: {
+                // Hood cam: rigidly attached to car, no inertia
+                const fwd = Vec2{ .x = @sin(car.yaw), .z = @cos(car.yaw) };
+                break :blk rl.Camera3D{
+                    .position = .{
+                        .x = car.position.x + fwd.x * 1.8,
+                        .y = road_y + 1.4,
+                        .z = car.position.z + fwd.z * 1.8,
+                    },
+                    .target = .{
+                        .x = car.position.x + fwd.x * 20.0,
+                        .y = road_y + 1.2,
+                        .z = car.position.z + fwd.z * 20.0,
+                    },
+                    .up = .{ .x = 0, .y = 1, .z = 0 },
+                    .fovy = 67.0 + std.math.clamp(@abs(car.speed) * 0.11, 0.0, 10.0),
+                    .projection = .perspective,
+                };
+            },
+        };
 
         rl.beginDrawing();
         defer rl.endDrawing();
